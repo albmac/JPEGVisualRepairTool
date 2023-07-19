@@ -1,0 +1,2938 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+	table {border-collapse:collapse; border:1px solid; width:100%; table-layout:fixed}
+	th,td {padding:5px; border:1px solid;overflow-wrap: break-word;}
+</style>
+</head>
+<body style="margin:0;">
+<canvas id="pictureCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
+<div id="tools" style="display:inline-block; width:230px; border:1px solid #d3d3d3; vertical-align: top;">
+<b>JPEG visual repair tool v1.0</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
+<button onclick=newtab()>Open new tab</button><br>
+<input type="file" onchange="readFile(this)" multiple><br>
+<button onclick=saveFile()>Save...</button><br>
+View channel 
+<select onchange="setLayer()" name="" id="layer">
+<option value="RGB" selected>RGB</option>
+<option value="Y">Y</option>
+<option value="C1">Cb</option>
+<option value="C2">Cr</option>
+<option value="RGB">RGB</option>
+</select><br>
+<div id="imgInfo"></div>
+<div id="MCUn"></div>
+<div id="MCUsel"></div>
+<button onclick=MCUinfoDialog.showModal()>Extra MCU info</button>
+<button onclick=fixColorDiff()>Fix colors</button><br>
+<button onclick=backSearchDialog.showModal()>MCU back search</button><br>
+<button onclick=addMCU() style="width:7em;">Insert MCU</button> 
+<button onclick=removeMCU() style="width:7em;">Remove MCU</button><br>
+<input type="radio" id="dc1" name="delta" value="1"><label for="dc1">1</label>
+<input checked type="radio" id="dc10" name="delta" value="10"><label for="dc10">10</label>
+<input type="radio" id="dc20" name="delta" value="20"><label for="dc20">20</label>
+<input type="radio" id="dc50" name="delta" value="50"><label for="dc50">50</label>
+<input type="radio" id="dc100" name="delta" value="100"><label for="dc100">100</label>
+<input type="radio" id="dc200" name="delta" value="200"><label for="dc200">200</label>
+<input type="radio" id="dcX" name="delta" value="x"><label for="dcX">custom</label>
+<input type="text" maxlength="4" size="3" id="dcVal" name="dcX"><br>
+<button onclick=DCmodMCU(1) id="dc+" style="width:4em;" disabled>DC+</button> 
+<button onclick=DCmodMCU(-1) id="dc-" style="width:4em;" disabled>DC-</button>
+<button onclick=DCmodMCU(0) id="dcset" style="width:4em;" disabled>set DC</button><br>
+<canvas id="zoomCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
+<div id="rstdiv" style="display:none">show RST <input type="Checkbox" id="rst" onchange=rstEnable()>
+<select id="rstNum" name="rstNum">
+<option value=-1>No RST</option>
+<option value=0>RST0</option>
+<option value=1>RST1</option>
+<option value=2>RST2</option>
+<option value=3>RST3</option>
+<option value=4>RST4</option>
+<option value=5>RST5</option>
+<option value=6>RST6</option>
+<option value=7>RST7</option>
+</select>
+<button onclick=rstSet() id="rstNumSet" style="width:3em;">set</button></div>
+<div id="txt2"></div>
+<div id="zoom"></div>
+</div><br>
+<div id="selectedBlock" style="width: 100%;overflow-wrap: break-word;"></div>
+<dialog id="backSearchDialog" style="border-radius:4px; border:1px solid; position: right; max-height: 60%; width: 300px">
+	MCU <input type="number" id="mcu" maxlength="3" size="3" value=10> 
+	Variants <input type="number" id="variants" maxlength="3" size="4" value="100"><br>
+	<button onclick=backSearch()>Search</button>
+	<button onclick=backSrcInsert()>Insert</button>
+	<button value="cancel" onclick=document.getElementById("backSearchDialog").close()>Cancel</button>
+	<div id="srcRes">
+	</div>
+</dialog>
+<dialog id="MCUinfoDialog" style="border-radius:4px; border:1px solid; position: right; max-width: 1000em; width: 80%">
+	<button onclick=infoDlgChangeSel(0)>&lt;&lt;</button>
+	<button onclick=infoDlgChangeSel(1)>&gt;&gt;</button>
+	bitstream<input type="Checkbox" id="details" onchange=infoDlgUpdate()>
+	<span id="legend">Legend: data, <font color='orange'>DC prefix</font>, <font color='red'>DC zero</font>,
+	<font color='green'>AC prefix</font>, <font color='violet'>ZRL (16 zeros)</font>, <font color='blue'>end of block</font></span>
+	<button value="ok" onclick=MCUinfoDialog.close()>OK</button>
+	<div id="info">
+	</div>
+</dialog>
+<dialog id="infoDialog" style="border-radius:4px; border:1px solid;">
+<H2 style="display:inline">JPEG visual repair tool v1.0</H2> by Alberto Maccioni<br><br>
+This tool can load JPEG images while preserving MCU (Minimum Coded Unit) coding data 
+and allows editing at MCU level.<br>
+The purpose is to correct artifacts resulting from data corruption in JPEG files.<br>
+You can delete, insert, copy, paste MCUs.<br>
+You can change DC level of each MCU.<br>
+You can view the image as RGB, Y, Cb, Cr.<br>
+You can automatically fix color differences.<br>
+You can view MCU pixel levels, coefficients, and binary datastream.<br>
+A crossed red rectangle appears on MCUs that generated decode errors.<br>
+Color fixing is performed by minimizing color difference between the top row of an MCU 
+and the bottom row of the corresponding MCU in the previous line.<br> 
+More info at <a href=www.github.com/jpegvisualrepair>github project page</a><br>
+Controls:<br>
+<b>mouse wheel</b> &rArr; zoom image<br>
+<b>left click</b> &rArr; select MCU; a black or white rectangle appears on selected MCU<br>
+<b>shift+left click</b> &rArr; extend selection<br>
+<b>left button drag</b> &rArr; drag image<br>
+<b>right click</b> &rArr; select MCU for color fixing; a red rectangle appears on selected MCU<br>
+<b>right button drag</b> &rArr; extend selection for color fixing<br>
+<b>ctrl-c</b> &rArr; copy selected MCUs<br>
+<b>ctrl-v</b> &rArr; paste before selected MCU<br>
+<b>del</b> &rArr; delete MCU<br>
+<b>i</b> &rArr; extra MCU info<br>
+<b>1</b> &rArr; switch to RGB view<br>
+<b>2</b> &rArr; switch to Y view<br>
+<b>3</b> &rArr; switch to Cb view<br>
+<b>4</b> &rArr; switch to Cr view<br>
+<br>
+
+<button value="ok" onclick=infoDialog.close()>OK</button>
+</dialog>
+<script>
+/* JPEG visual repair tool
+ Copyright (C) 2023 Alberto Maccioni
+ This file is part of <https://github.com/jpegVisualRepairTool>.
+
+ JPEG visual repair tool is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ JPEG visual repair tool is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with JPEG visual repair tool. If not, see <http://www.gnu.org/licenses/>.
+*/
+filename="";
+numMCU=0;
+mcuPixX=0,mcuPixY=0;
+Mx=0,My=0;
+MCUdef="";
+MCUarray=[];
+mcucount=0;
+var selectedMCU={};
+selectedMCU.x=-1;
+selectedMCU.y=-1;
+selectedMCU.i=-1;
+selectedMCU.list=[];
+iblock=0;
+Rnumbit=0;	//reserved to getbit
+RDbyte=0;	//reserved to getbit
+Rptr=0;		//reserved to getbit
+WRbyte=0;	//reserved to putbit
+Wnumbit=0;	//reserved to putbit
+Wptr=0;		//reserved to putbit
+bitstuffing=0;
+bufsize=128;
+scanoffset=0;
+var filebuf;
+Rbitcount=0;
+Wbitcount=0;
+MCUdef=['Y','Y','C','C'];		//default MCU composition
+restartInt=-1;
+dqt=new Array();
+dht=new Array();
+zoomFactor=1;
+zDx=0,zDy=0;
+isDragging=0;
+dragStart={x:0,y:0};
+noClick=false;
+displayRows=0;
+colorFixList=new Array();
+ErrCnt=0;
+originalMCUcount=0;
+drawRestart=false;
+var pictInt = new OffscreenCanvas(1,1);
+var ctx=pictInt.getContext("2d");
+var cZoom = document.getElementById("zoomCanvas");
+var ctxZoom = cZoom.getContext("2d");
+var cPicture = document.getElementById("pictureCanvas");
+var ctxPicture = cPicture.getContext("2d");
+MCUsrcArray=[];
+
+//show coordinates of original picture
+cPicture.addEventListener("mousemove", function(e){
+	var x = e.pageX - cPicture.offsetLeft;
+	var y = e.pageY - cPicture.offsetTop;
+	var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+	var x1=(x-zDx)*rate,y1=(y-zDy)*rate;
+	var str="xy("+x1.toFixed(0)+","+y1.toFixed(0)+")";
+	if(mcuPixX>0) str+=", MCU("+Math.floor(x1/mcuPixX)+";"+Math.floor(y1/mcuPixY)+")";
+	document.getElementById("txt2").innerHTML=str;
+});
+
+//select MCU under the cursor
+cPicture.addEventListener("click", function(e) { 
+	if(noClick){
+		noClick=false;
+		return;
+	}
+	var x = e.pageX - cPicture.offsetLeft;
+	var y = e.pageY - cPicture.offsetTop;
+	var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+	var x1=(x-zDx)*rate,y1=(y-zDy)*rate;
+	if(e.shiftKey==false){
+		if(selectedMCU.x>-1) render(selectedMCU.i,document.getElementById("layer").value);	//redraw last block
+		selectedMCU.x=Math.floor(x1/mcuPixX);
+		selectedMCU.y=Math.floor(y1/mcuPixY);
+		var j=selectedMCU.y*Mx+selectedMCU.x;
+		selectedMCU.i=j;
+		console.log("selected MCU"+j+" ("+selectedMCU.x+";"+selectedMCU.y+")");
+		for(j=0;j<selectedMCU.list.length;j++){
+			render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
+		}
+		selectedMCU.list=[];
+	}
+	else if(selectedMCU.x>-1){	//extend selection
+		var sel2x=Math.floor(x1/mcuPixX);
+		var sel2y=Math.floor(y1/mcuPixY);
+		var j=sel2y*Mx+sel2x;
+		for(;j<selectedMCU.i;j++) selectedMCU.list.push(j);
+		for(;j>selectedMCU.i;j--) selectedMCU.list.push(j);
+		selectedMCU.list=removeDuplicates(selectedMCU.list);
+		console.log(selectedMCU.list);
+	}
+	for(var i=0;i<colorFixList.length;i++){
+		render(colorFixList[i],document.getElementById("layer").value);	//redraw block without selection rectangle
+	}
+	colorFixList.length=0;	//clear fix list if present
+	selectedUpdate();
+});
+
+//right click: select or deselect MCU under the cursor for color fix
+cPicture.addEventListener("contextmenu", function(e) { 
+	e.preventDefault();
+	if(noClick){
+		noClick=false;
+		return;
+	}
+	var x = e.pageX - cPicture.offsetLeft;
+	var y = e.pageY - cPicture.offsetTop;
+	var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+	var x1=(x-zDx)*rate,y1=(y-zDy)*rate;
+	var targetMCU={};
+	targetMCU.x=Math.floor(x1/mcuPixX);
+	targetMCU.y=Math.floor(y1/mcuPixY);
+	targetMCU.i=targetMCU.y*Mx+targetMCU.x;
+	var i;
+	for(i=0;i<colorFixList.length;i++){
+		if(colorFixList[i].i==targetMCU.i){ 
+			colorFixList.splice(i,1);	//remove if present
+			i=colorFixList.length+10;
+			render(targetMCU.i,document.getElementById("layer").value);	//redraw block without selection rectangle
+			ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+		}
+	}
+	if(i<colorFixList.length+10){
+		colorFixList.push(targetMCU);
+		ctx.beginPath();
+		ctx.lineWidth = "1";
+		ctx.strokeStyle = "red";
+		ctx.rect(targetMCU.x*mcuPixX,targetMCU.y*mcuPixY,mcuPixX-1,mcuPixY-1);
+		ctx.stroke();
+		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+	}
+});
+
+//zoom via mouse wheel
+cPicture.addEventListener( 'wheel', function(e){
+	e.preventDefault();
+	var xorig=(e.pageX-cPicture.offsetLeft-zDx)/zoomFactor;	//pointer in original picture coordinates 
+	var yorig=(e.pageY-cPicture.offsetTop-zDy)/zoomFactor;
+	zoomFactor*=1-e.deltaY*0.001;
+	if(zoomFactor<1){
+		zoomFactor=1;
+		zDx=zDy=0;
+	}
+	else{
+		zDx=(e.pageX-cPicture.offsetLeft)-xorig*zoomFactor;	//move original pointer under actual one
+		zDy=(e.pageY-cPicture.offsetTop)-yorig*zoomFactor;
+		if(zDx>0) zDx=0;
+		if(zDy>0) zDy=0;
+		if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
+		if(zDy<ctxPicture.canvas.height*(1-zoomFactor)) zDy=ctxPicture.canvas.height*(1-zoomFactor);
+	}
+	ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+	document.getElementById("zoom").innerHTML="Zoom:"+zoomFactor.toFixed(2);
+});
+
+cPicture.addEventListener( 'mousedown', function(e){
+	if(e.button==0)	isDragging=1;	//left click -> drag image
+	if(e.button==2)	isDragging=2;	//right click -> select for color fix
+	dragStart.x=e.pageX; 
+	dragStart.y=e.pageY;
+});
+
+cPicture.addEventListener( 'mouseup', function(e){
+	if(e.button==0){	//left button
+		isDragging=0;
+		zDx+=e.pageX-dragStart.x;
+		zDy+=e.pageY-dragStart.y;
+		if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
+		if(zDy<ctxPicture.canvas.height*(1-zoomFactor)) zDy=ctxPicture.canvas.height*(1-zoomFactor);
+		if(zDx>0) zDx=0;
+		if(zDy>0) zDy=0;
+		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+	}
+	isDragging=0;
+});
+
+//stop dragging if mouse exits picture area
+cPicture.addEventListener( 'mouseout', function(e){
+	if(isDragging) isDragging=0;
+});
+
+//drag image or select blocks
+cPicture.addEventListener( 'mousemove', function(e){
+	if(isDragging==2){	//extend selection for color fix
+		noClick=true;
+		var x = e.pageX - cPicture.offsetLeft;
+		var y = e.pageY - cPicture.offsetTop;
+		var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+		var x1=(x-zDx)*rate,y1=(y-zDy)*rate;
+		var targetMCU={};
+		targetMCU.x=Math.floor(x1/mcuPixX);
+		targetMCU.y=Math.floor(y1/mcuPixY);
+		targetMCU.i=targetMCU.y*Mx+targetMCU.x;
+		var i;
+		for(i=0;i<colorFixList.length;i++){
+			if(colorFixList[i].i==targetMCU.i){ 
+				i=colorFixList.length+10;
+			}
+		}
+		if(i<colorFixList.length+10){
+			colorFixList.push(targetMCU);
+			ctx.beginPath();
+			ctx.lineWidth = "1";
+			ctx.strokeStyle = "red";
+			ctx.rect(targetMCU.x*mcuPixX,targetMCU.y*mcuPixY,mcuPixX-1,mcuPixY-1);
+			ctx.stroke();
+			ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+		}
+	}
+	if(isDragging==1){	//drag image
+		noClick=true;
+		var dx=e.pageX-dragStart.x;
+		var dy=e.pageY-dragStart.y;
+		if(dx+zDx<ctxPicture.canvas.width*(1-zoomFactor)) dx=ctxPicture.canvas.width*(1-zoomFactor)-zDx;
+		if(dy+zDy<ctxPicture.canvas.height*(1-zoomFactor)) dy=ctxPicture.canvas.height*(1-zoomFactor)-zDy;
+		if(dx+zDx>0) dx=-zDx;
+		if(dy+zDy>0) dy=-zDy;
+		ctxPicture.drawImage(pictInt,zDx+dx,zDy+dy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+	}
+});
+
+//show coordinates of original picture
+cZoom.addEventListener("mousemove", function(e){
+	var x=Math.floor((e.pageX-cZoom.offsetLeft)/10);
+	var y=Math.floor((e.pageY-cZoom.offsetTop)/10);
+	if(x>=mcuPixX) x=mcuPixX-1;
+	if(y>=mcuPixY) y=mcuPixY-1;
+	var str="xy("+x+","+y+")";
+	if(selectedMCU.i>=0){
+		var Y=MCUarray[selectedMCU.i].viewY[x+y*mcuPixY];
+		var C1=MCUarray[selectedMCU.i].viewC1[x+y*mcuPixY];
+		var C2=MCUarray[selectedMCU.i].viewC2[x+y*mcuPixY];
+		str+="YCbCr["+Y+";"+C1+";"+C2+"]";
+	}
+	document.getElementById("txt2").innerHTML=str;
+});
+
+//paste from clipboard before currently selected MCU
+document.body.addEventListener("paste",function(ev){
+	if(selectedMCU.i<0) return;
+	ev.preventDefault();
+	console.log("paste MCU to position "+selectedMCU.i);
+	var data=(ev.clipboardData||window.clipboardData).getData("text");
+	var MCUp=JSON.parse(data);
+	console.log("paste "+MCUp.length+" MCU");
+	for(var i=MCUp.length-1;i>=0;i--){	//reverse order
+		if(MCUp[i].length!=MCUarray[0].length){
+			console.log("not a standard MCU!");
+			return;
+		}
+		MCUp[i].bufferY=new ArrayBuffer(mcuPixX*mcuPixY);
+		MCUp[i].bufferC1=new ArrayBuffer(mcuPixX*mcuPixY);
+		MCUp[i].bufferC2=new ArrayBuffer(mcuPixX*mcuPixY);
+		MCUp[i].viewY=new Uint8Array(MCUp[i].bufferY);
+		MCUp[i].viewC1=new Uint8Array(MCUp[i].bufferC1);
+		MCUp[i].viewC2=new Uint8Array(MCUp[i].bufferC2);
+		for(var j=0;j<MCUp[i].viewY.length;j++) MCUp[i].viewY[j]=MCUp[i].viewC1[j]=MCUp[i].viewC2[j]=255;
+		MCUarray.splice(selectedMCU.i,0,MCUp[i]);	//insert new block
+		mcucount=MCUarray.length;
+	}
+	console.time("idct");
+	for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+	console.timeEnd("idct");
+	render(-1,document.getElementById("layer").value);
+	selectedUpdate();
+	document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+});
+
+//copy selected MCU to clipboard
+document.body.addEventListener("copy",function(ev){
+	if(selectedMCU.i<0) return;
+	ev.preventDefault();
+	var list=selectedMCU.list;
+	list.push(selectedMCU.i);
+	list=list.sort((a,b)=>a-b);
+	console.log("copied MCU "+list);
+	ev.clipboardData.setData("text/plain",JSON.stringify(list.map((x)=>MCUarray[x])));
+});
+
+//keyboard shortcuts
+document.body.addEventListener("keydown",function(ev){
+	ev=ev||window.event;
+	var key=ev.which||ev.keycode;
+	if(key==73) MCUinfoDialog.showModal();	//i
+	if(key==49){	//1
+		document.getElementById("layer").value="RGB";
+		setLayer();
+	}
+	if(key==50){	//2
+		document.getElementById("layer").value="Y";
+		setLayer();
+	}
+	if(key==51){	//3
+		document.getElementById("layer").value="C1";
+		setLayer();
+	}
+	if(key==52){	//4
+		document.getElementById("layer").value="C2";
+		setLayer();
+	}
+	if(key==37){	// left
+		if(MCUinfoDialog.open) infoDlgChangeSel(0);
+		else{
+			if(ev.shiftKey){	//extend selection
+				if(selectedMCU.i>-1){
+					if(selectedMCU.list.length==0){
+						selectedMCU.list.push(selectedMCU.i-1);
+					}
+					else{
+						if(selectedMCU.list[0]>selectedMCU.i){
+							render(selectedMCU.list.pop(),document.getElementById("layer").value);	//clear selection rectangles
+						}
+						else selectedMCU.list.push(Math.min(...selectedMCU.list)-1);
+					}
+//					console.log(selectedMCU.list);
+					selectedUpdate();
+				}
+			}
+			else{	//change selection
+				if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
+				selectedMCU.i--;
+				if(selectedMCU.i<0) selectedMCU.i=0;
+				selectedMCU.x=selectedMCU.i%Mx;
+				var y0=selectedMCU.y;
+				selectedMCU.y=Math.floor(selectedMCU.i/Mx);
+				for(var j=0;j<selectedMCU.list.length;j++){
+					render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
+				}
+				selectedMCU.list=[];
+				var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+				var x=(-zDx)*rate; //min x coordinate on screen
+				if(selectedMCU.y!=y0){	//changed row, scroll to end of image
+					zDx=ctxPicture.canvas.width*(1-zoomFactor);
+					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+				}
+				else if((selectedMCU.x)*mcuPixX<x){ //shift left by one MCU width
+					zDx+=mcuPixX/rate;
+					if(zDx>0) zDx=0;
+					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+				}
+				selectedUpdate();
+			}
+		}
+	}
+	if(key==39){	// right
+		if(MCUinfoDialog.open) infoDlgChangeSel(1);
+		else{
+			if(ev.shiftKey){	//extend selection
+				if(selectedMCU.i>-1){
+					if(selectedMCU.list.length==0){
+						selectedMCU.list.push(selectedMCU.i+1);
+					}
+					else{
+						if(selectedMCU.list[0]<selectedMCU.i){
+							render(selectedMCU.list.pop(),document.getElementById("layer").value);	//clear selection rectangles
+						}
+						else selectedMCU.list.push(Math.max(...selectedMCU.list)+1);
+					}
+					selectedUpdate();
+				}
+			}
+			else{	//change selection
+				if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
+				selectedMCU.i++;
+				if(selectedMCU.i>=mcucount) selectedMCU.i=mcucount-1;
+				selectedMCU.x=selectedMCU.i%Mx;
+				var y0=selectedMCU.y;
+				selectedMCU.y=Math.floor(selectedMCU.i/Mx);
+				for(var j=0;j<selectedMCU.list.length;j++){
+					render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
+				}
+				selectedMCU.list=[];
+				var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+				var x=(ctxPicture.canvas.width-zDx)*rate; //max x coordinate on screen
+				if(selectedMCU.y!=y0){	//changed row, scroll to end of image
+					zDx=0;
+					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+				}
+				else if((selectedMCU.x+1)*mcuPixX>x){ //shift left by one MCU width
+					zDx-=mcuPixX/rate;
+					if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
+					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+				}
+				selectedUpdate();
+			}
+		}
+	}
+	if(key==38){	//up
+		if(!MCUinfoDialog.open){
+			if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
+			if(selectedMCU.y>0) selectedMCU.y--;
+			selectedMCU.i=selectedMCU.y*Mx+selectedMCU.x;
+			for(var j=0;j<selectedMCU.list.length;j++){
+				render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
+			}
+			selectedMCU.list=[];
+			selectedUpdate();
+			ev.preventDefault();
+		}
+	}
+	if(key==40){	//down
+		if(!MCUinfoDialog.open){
+			if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
+			if(selectedMCU.y<Math.floor(mcucount/Mx)-1) selectedMCU.y++;
+			selectedMCU.i=selectedMCU.y*Mx+selectedMCU.x;
+			for(var j=0;j<selectedMCU.list.length;j++){
+				render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
+			}
+			selectedMCU.list=[];
+			selectedUpdate();
+			ev.preventDefault();
+		}
+	}
+	if(key==46){	//del
+		removeMCU();
+	}
+	if(key==219){	//[
+	}
+	if(key==221){	//]
+	}
+});
+
+function removeDuplicates(arr){
+	return arr.filter((item,index)=>arr.indexOf(item)===index);
+}
+
+//open another tab with the same document
+function newtab(){
+	window.open(window.location.href, "_blank");
+}
+
+//update zoom view and info about selected block 
+function selectedUpdate(){
+	var j=selectedMCU.i;
+	var i;
+	var list=selectedMCU.list.slice();
+	list.push(selectedMCU.i);
+	for(j=0;j<list.length;j++){
+		avg1=getAvgComponents(list[j],0);	//average components
+		avg2=getAvgComponents(list[j],mcuPixX*(mcuPixY/2));	//average components, middle row
+		avg3=getAvgComponents(list[j],mcuPixX*(mcuPixY-1));	//average components, lower row
+		avgY=(avg1.Y+avg2.Y+avg3.Y)/3;
+		if(avgY>100) ctx.strokeStyle = "black";
+		else ctx.strokeStyle = "white";
+		ctx.beginPath();
+		ctx.lineWidth = "1";
+		ctx.rect(list[j]%Mx*mcuPixX,Math.floor(list[j]/Mx)*mcuPixY,mcuPixX-1,mcuPixY-1);
+		ctx.stroke();
+	}
+	renderZoom(selectedMCU.i,document.getElementById("layer").value);
+	var str="MCU"+selectedMCU.i+" (X "+selectedMCU.x+";Y "+selectedMCU.y+")";
+	document.getElementById("MCUsel").innerHTML="Selected "+str;
+	ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+	var dlg=document.getElementById("MCUinfoDialog");
+	var div=document.getElementById("info");
+	while(div.firstChild) div.removeChild(div.firstChild);
+	details=dlg.querySelector("#details").checked;
+	document.getElementById("legend").style.display=details?'':'none';
+	j=selectedMCU.i;
+	if(MCUarray[j].restart>-1) str+=" Restart marker: "+MCUarray[j].restart;
+	div.insertAdjacentHTML("beforeend",str+"<br>");
+	var table="<table><tr><th style='width:5.5em'>Address</th>"+
+		"<th style='width:2.1em'>Type</th><th style='width:2.5em'>DC</th>"+
+		"<th>Coefficients</th><th style='width:5em'>Errors</th></tr>";
+	var str={str:""};	//trick to pass modifiable string
+	MCUarray[mcucount]=structuredClone(MCUarray[0]);	//MCU for decodeBlock
+	for(i=0;i<MCUarray[j].blocks.length;i++){
+		table+="<tr><td>0x"+(MCUarray[j].blocks[i].offset>>3).toString(16).toUpperCase()+"."+(MCUarray[j].blocks[i].offset&7)+"</td>"+
+		"<td>"+MCUarray[j].blocks[i].blockType+"</td>"+
+		"<td>"+MCUarray[j].blocks[i].DC+"</td><td>";
+		if(details){
+			setBitAddr(MCUarray[j].blocks[i].offset);
+			str.str="";
+			decodeBlock(MCUdef[i]=='Y'?Y_BLOCK:C_BLOCK,0,str);
+			table+=str.str+"<br>";
+		}
+		table+=MCUarray[j].blocks[i].coeff.toString().replace(/(,0)+$/,"")+"</td>"+
+		"<td>"+MCUarray[j].blocks[i].errors+"</td></tr>";
+	}
+	table+="</table>";
+	div.insertAdjacentHTML("beforeend",table);
+	MCUarray.length=mcucount;	//remove temporary MCU
+}
+
+//update info dialog from within
+function infoDlgUpdate(){
+	selectedUpdate();
+	MCUinfoDialog.close();
+	MCUinfoDialog.showModal();
+}
+
+//change selected block from info dialog
+function infoDlgChangeSel(direction=1){
+	if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
+	if(direction) selectedMCU.i++;
+	else selectedMCU.i--;
+	if(selectedMCU.i<0) selectedMCU.i=0;
+	if(selectedMCU.i>=mcucount) selectedMCU.i=mcucount-1;
+	selectedMCU.x=selectedMCU.i%Mx;
+	selectedMCU.y=Math.floor(selectedMCU.i/Mx);
+	selectedUpdate();
+	MCUinfoDialog.close();
+	MCUinfoDialog.showModal();
+}
+
+//add MCU before selected one and update view
+//new MCU is neutral (same DC as previous one)
+function addMCU(){
+	if(selectedMCU.x>-1&&selectedMCU.y>-1){
+		bufferY=new ArrayBuffer(mcuPixX*mcuPixY);
+		bufferC1=new ArrayBuffer(mcuPixX*mcuPixY);
+		bufferC2=new ArrayBuffer(mcuPixX*mcuPixY);
+		viewY=new Uint8Array(bufferY);
+		viewC1=new Uint8Array(bufferC1);
+		viewC2=new Uint8Array(bufferC2);
+		for(j=0;j<viewY.length;j++) viewY[j]=viewC1[j]=viewC2[j]=255;
+		var MCU={
+			bufferY: bufferY,		//pre-decoded Y data
+			bufferC1: bufferC1,		//pre-decoded C1 data
+			bufferC2: bufferC2,		//pre-decoded C2 data
+			viewY: viewY,
+			viewC1: viewC1,
+			viewC2: viewC2,
+			blocks: new Array,
+			row: -1,
+			col: -1,
+			offset: -1,
+			restart: -1
+		}
+		for(var i=0;i<MCUdef.length;i++){
+			MCU.blocks[i]={
+				blockType:MCUdef[i],
+				DC: 0,
+				coeff: [0],
+				errors: ""
+			}
+		}
+		MCUarray.splice(selectedMCU.i,0,MCU);	//insert new block
+		mcucount=MCUarray.length;
+		extractPixel(selectedMCU.i);
+		render(-1,document.getElementById("layer").value);
+		selectedUpdate();
+		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+	}
+}
+
+//remove selected MCU and update view
+function removeMCU(){
+	if(selectedMCU.i>-1){
+		var min=selectedMCU.i,max=min;
+		for(var j=0;j<selectedMCU.list.length;j++){
+			if(selectedMCU.list[j]<min) min=selectedMCU.list[j];
+			if(selectedMCU.list[j]>max) max=selectedMCU.list[j];
+		}
+		MCUarray.splice(min,1+max-min);	//remove elements
+		selectedMCU.list=[];
+		mcucount=MCUarray.length;
+		console.time("idct");
+		for(var i=min;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+		console.timeEnd("idct");
+		render(-1,document.getElementById("layer").value);
+		selectedUpdate();
+		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+	}
+}
+	
+//Modify DC coefficient in selected MCU (in first block of relevant type)
+//value: new value or delta
+//0   -> new value
+//+-1 -> delta w.r.t actual value
+function DCmodMCU(value=1){
+	if(selectedMCU.i>-1&&document.getElementById("layer").value!="RGB"){	//only single channel
+		if(value==0){
+			var newDC=parseInt(document.getElementById("dcVal").value);
+			if(document.getElementById("layer").value=="Y"){
+				MCUarray[selectedMCU.i].blocks[0].coeff[0]=newDC;
+			}
+			else if(document.getElementById("layer").value=="C1"){
+				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C";b++);
+				MCUarray[selectedMCU.i].blocks[b].coeff[0]=newDC;
+			}
+			else if(document.getElementById("layer").value=="C2"){
+				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C2";b++);
+				MCUarray[selectedMCU.i].blocks[b].coeff[0]=newDC;
+			}
+			for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data			
+		}
+		else{
+			var selected = document.querySelector('input[type=radio][name=delta]:checked');
+			delta=value*selected.value;
+			if(selected.value=="x") delta=value*parseInt(document.getElementById("dcVal").value);
+			var b;
+			if(document.getElementById("layer").value=="Y"){
+				MCUarray[selectedMCU.i].blocks[0].coeff[0]+=delta;
+			}
+			else if(document.getElementById("layer").value=="C1"){
+				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C";b++);
+				MCUarray[selectedMCU.i].blocks[b].coeff[0]+=delta;
+			}
+			else if(document.getElementById("layer").value=="C2"){
+				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C2";b++);
+				MCUarray[selectedMCU.i].blocks[b].coeff[0]+=delta;
+			}
+			for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+		}
+		render(-1,document.getElementById("layer").value);
+		selectedUpdate();
+	}
+}
+	
+	
+function readFile(input) {
+	file = input.files[0];
+	filename = file.name;
+	let reader = new FileReader();
+	reader.readAsArrayBuffer(file);
+	reader.onload = function() {
+		filebuf = new Uint8Array(reader.result);
+		decodeJpeg();
+//		setTimeout(decodeJpeg(),500);
+		originalMCUcount=mcucount;
+		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+//		document.getElementById("MCUn").innerHTML="Loading file ...";
+	};
+	reader.onerror = function() {
+		console.log(reader.error);
+	};
+	for(let i=1;i<input.files.length;i++){	//in case of multiple files open additional tabs
+		let w=window.open(window.location.href,"_blank");
+		w.onload=(ev)=>{w.postMessage(input.files[i],"*")};
+		console.log("postMessage: "+input.files[i].name);
+	}
+}
+
+//this receives a message containing a file to open
+window.addEventListener("message",(event)=>{
+	console.log("message: "+event.data.name);
+	filename = event.data.name;
+	let reader = new FileReader();
+	reader.readAsArrayBuffer(event.data);
+	reader.onload = function() {
+		filebuf = new Uint8Array(reader.result);
+		decodeJpeg();
+		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+	}
+},false);
+
+//save file
+function saveFile(){
+	var newsize=filebuf.length+1000;
+	if(mcucount>originalMCUcount) newsize+=(mcucount-originalMCUcount)*1000;  //just a guess
+	var buf=new Uint8Array(newsize);
+	buf.set(filebuf);
+	putbit(0,0); //reset count
+	Wptr=scanoffset;
+	Wbitcount=Wptr*8;
+	var i,j,k,Htable;
+	for(i=0;i<YAC.length&&YAC[i][2]!=0x00;i++);
+	var EOBY={n:YAC[i][0],code:YAC[i][1]};
+	for(i=0;i<CAC.length&&CAC[i][2]!=0x00;i++);
+	var EOBC={n:CAC[i][0],code:CAC[i][1]};
+	for(i=0;i<YAC.length&&YAC[i][2]!=0xF0;i++);
+	var ZRLY={n:YAC[i][0],code:YAC[i][1]};
+	for(i=0;i<CAC.length&&CAC[i][2]!=0xF0;i++);
+	var ZRLC={n:CAC[i][0],code:CAC[i][1]};
+	var ZRL,EOB;
+	for(i=0;i<MCUarray.length;i++){
+		if(MCUarray[i].restart>-1){		//write RST marker
+			putbit(-1,buf);	//force write
+			buf[Wptr++]=0xFF;
+			buf[Wptr++]=0xD0+MCUarray[i].restart;	//RSTX
+		}
+		for(j=0;j<MCUarray[i].blocks.length;j++){	//block encode
+			var x={n:0,code:0},R=0;
+			if(MCUarray[i].blocks[j].coeff.length<64) continue;	//should never happen 
+			if(MCUarray[i].blocks[j].blockType=="Y"){
+				Htable=YAC;
+				ZRL=ZRLY;
+				EOB=EOBY;
+				x=encodeHvalDC(YDC,MCUarray[i].blocks[j].coeff[0]);
+			}
+			else if(MCUarray[i].blocks[j].blockType=="C"||MCUarray[i].blocks[j].blockType=="C2"){
+				Htable=CAC;
+				ZRL=ZRLC;
+				EOB=EOBC;
+				x=encodeHvalDC(CDC,MCUarray[i].blocks[j].coeff[0]);
+			}
+			if(x.n>0) for(k=1<<(x.n-1);k;k>>=1) putbit(x.code&k?1:0,buf); //write msb first
+			else{
+				ddd=1;
+			}
+			//adapted from figure F.2 ITU.....
+			k=0;
+			do{
+				k++;
+				if(MCUarray[i].blocks[j].coeff[k]==0){
+					if(k<63){
+						R++;
+						continue;
+					}
+					else{
+						//write EOB=0x00
+						for(r=1<<(EOB.n-1);r;r>>=1) putbit(EOB.code&r?1:0,buf); //write msb first
+						break;
+					}
+				}
+				else{
+					while(R>15){
+						//write ZRL=0xF0
+						for(r=1<<(ZRL.n-1);r;r>>=1) putbit(ZRL.code&r?1:0,buf); //write msb first
+						R=R-16;
+					}
+					x=encodeHvalAC(Htable,R,MCUarray[i].blocks[j].coeff[k]);
+					R=0;
+					if(x.n>0) for(r=1<<(x.n-1);r;r>>=1) putbit(x.code&r?1:0,buf); //write msb first
+				}
+			} while (k<63);
+		}
+	}
+	putbit(-1,buf);	//force write
+	buf[Wptr++]=0xFF;
+	buf[Wptr++]=0xD9;	//write EOI
+	console.log("save file size: "+Wptr);
+	buf=buf.slice(0,Wptr);
+	var bb=new Blob([new Uint8Array(buf)],{type:"application/octet-binary"});
+	var blobUrl = URL.createObjectURL(bb);    
+	var link = document.createElement("a"); // Or maybe get it from the current document
+	link.id="downloadID";
+	link.href = blobUrl;
+	link.download = filename.replace(/\./,"_corrected.");
+	document.body.appendChild(link); // Or append it whereever you want
+	document.querySelector("#downloadID").click() //can add an id to be specific if multiple anchor tag, and use #id
+	document.body.removeChild(link); // Or append it whereever you want
+}
+
+//change layer and redraw selection rectangle
+function setLayer(){
+	if(document.getElementById("layer").value=="RGB"){
+		document.getElementById("dc+").disabled=true;
+		document.getElementById("dc-").disabled=true;
+		document.getElementById("dcset").disabled=true;
+	}
+	else{
+		document.getElementById("dc+").disabled=false;
+		document.getElementById("dc-").disabled=false;
+		document.getElementById("dcset").disabled=false;
+	}
+	render(-1,document.getElementById("layer").value);
+	if(selectedMCU.x>-1){
+		ctx.beginPath();
+		ctx.lineWidth = "1";
+		ctx.strokeStyle = "black";
+		ctx.rect(selectedMCU.x*mcuPixX,selectedMCU.y*mcuPixY,mcuPixX-1,mcuPixY-1);
+		ctx.stroke();
+		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+		renderZoom(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);
+	}
+}
+
+//main jpeg decode function
+function decodeJpeg(){
+	restartInt=-1;	//restart interval
+	document.querySelector("#rst").checked=false;
+	var i=0,j=0,size=0,r;
+	var X=0,Y=0;
+	var Nraw=0,Ny=0,Nc=0;
+	var sof0=0,endoffset=0;
+	var drioffset=0;
+	scanoffset=0;
+	dht.length=0;
+	dqt.length=0;
+	zoomFactor=1;
+	zDx=0,zDy=0;
+	ErrCnt=0;
+	console.time("decode");
+	console.log("Addr\tMarker\tType\n");
+	for(f=0;f<filebuf.length;){
+		r=filebuf[f++];
+		if(r==0xFF){ 	//is it a marker?
+			r2=filebuf[f++];
+			if(r2!=undefined&&r2!=0){ //yes, decode a Marker
+				if(restartInt==-1||(restartInt==0&&!(r2>=0xD0&&r2<=0xD7))) str="@0x"+i.toString(16)+"\t0xFF"+(r2>=0x10?"":"0")+r2.toString(16)+"\t";	//no RSTX
+				for(j=0;j<markers.length;j++){
+					if(r2==markers[j][0]){
+						if(markers[j][1]==1){	//markers with additional data
+							size=(filebuf[f++]<<8)+filebuf[f++];
+							console.log(str+markers[j][2]+" ("+size+" bytes)");
+							for(k=size-2;k;k--) f++;
+							i+=size;
+						}
+						else if(restartInt==-1||(restartInt==0&&!(r2>=0xD0&&r2<=0xD7))) console.log(str+markers[j][2]+"\n");	//no RSTX
+						if(markers[j][0]==0xDA){
+							if(size<20) scanoffset=i+2;	//SOS -> start of stream
+						}
+						else if(markers[j][0]==0xD9){
+							if(scanoffset!=0) endoffset=i;		//EOI -> end of image
+							if(i<filebuf.length-100) console.log("Early EOF @0x"+i.toString(16));
+						}
+						else if(markers[j][0]==0xDD){
+							if(size==4){			//DRI define restart interval
+								drioffset=i;
+								restartInt=0;
+							}
+						}
+						else if(markers[j][0]==0xC0){
+							if(size<20) sof0=i-size+4;	//SOF0 P
+						}
+						else if(markers[j][0]==0xC4){	//DHT "Define Huffman Table"
+							if(scanoffset==0) dht.push(i-size+2); //only before scan data 
+						}
+						else if(markers[j][0]==0xDB){		//DQT Define quantization table
+							if(scanoffset==0) dqt.push(i-size+2); //only before scan data
+						}
+						break;
+					}
+				}
+				if(j==markers.length) console.log(str+" ??\n");
+			}
+			i++;
+		}
+		i++;
+	}
+	if(endoffset==0) endoffset=filebuf.length;
+	for(i=0;i<dqt.length;i++){	//DQT
+		f=dqt[i];
+		size=(filebuf[f++]<<8)+filebuf[f++];
+		console.log("DQT ("+size+" bytes)");
+		while(f<dqt[i]+size){
+			dest=filebuf[f++];
+			Pq=dest>>4;
+			Tq=dest&0xF;
+			console.log("Pq:"+Pq+" Tq:"+Tq);
+			for(j=0;j<64&&f<dqt[i]+size;j++){
+				if(Tq==0) qmatY[j]=filebuf[f++];
+				else if(Tq==1) qmatC[j]=filebuf[f++];
+			}
+			if(Tq==0){
+				qmatY=zigzag2square(qmatY);
+				//printmat(qmatY,"QTY");
+			}
+			else if(Tq==1){
+				qmatC=zigzag2square(qmatC);
+				//printmat(qmatC,"QTC");
+			}
+		}
+	}	
+	for(var h=0;h<dht.length;h++){	//define huffman table
+		f=dht[h];
+		size=(filebuf[f++]<<8)+filebuf[f++]-2; //excluding size
+		console.log("DHT ("+size+" bytes)");
+		table=filebuf.slice(f,f+size);
+		var	HTX;
+		if(size==HT0.length&&equal(table,HT0)) console.log("standard Huffman table @0x"+(dht[h]+2).toString(16));
+		else if(size==HT1.length&&equal(table,HT1)) console.log("standard Huffman table (Y DC) @0x"+(dht[h]+2).toString(16));
+		else if(size==HT2.length&&equal(table,HT2)) console.log("standard Huffman table (Y AC) @0x"+(dht[h]+2).toString(16));
+		else if(size==HT3.length&&equal(table,HT3)) console.log("standard Huffman table (C DC) @0x"+(dht[h]+2).toString(16));
+		else if(size==HT4.length&&equal(table,HT4)) console.log("standard Huffman table (C AC) @0x"+(dht[h]+2).toString(16));
+		else{
+			var huffsize=new Array(256),fullcode=new Array(256);
+			for(var z=0;z<size;){
+				if((table[z]&0xF)==0&&(table[z]>>4)==0) HTX=YDC;
+				else if((table[z]&0xF)==0&&(table[z]>>4)==1) HTX=YAC;
+				else if((table[z]&0xF)==1&&(table[z]>>4)==0) HTX=CDC;
+				else if((table[z]&0xF)==1&&(table[z]>>4)==1) HTX=CAC;
+				var k=17,j,ncode=0;
+				for(j=0;j<256;j++) huffsize[j]=0;
+				for(var i=0;i<16;i++){
+					for(j=0;j<table[z+1+i];j++){
+						huffsize[k-17+j]=i+1;
+						fullcode[k-17+j]=table[z+k+j];
+						ncode++;
+					}
+					k+=j;
+				}
+				z+=k;
+					//ISO/IEC 10918-1 : 1993(E) Figure C.2 – Generation of table of Huffman codes
+				k=0;
+				var code=0;
+				var si=huffsize[0];
+				var huffcode=new Array(256);
+				do{
+					do{
+						huffcode[k]=code;
+						code++;
+						k++;
+					} while (huffsize[k]==si);
+					if(huffsize[k]==0) break;
+					do{
+						code<<=1;
+						si++;
+					} while (huffsize[k]!=si);
+				} while (huffsize[k]);
+				//end C.2
+				for(var i=0;i<ncode;i++){
+					HTX[i][0]=huffsize[i];
+					HTX[i][1]=huffcode[i];
+					HTX[i][2]=fullcode[i];
+				}
+				HTX[ncode][0]=-1;
+				HTX[ncode][1]=-1;
+				HTX[ncode][2]=-1;
+			}
+			if(HTX==YDC) console.log("YDC ");
+			else if(HTX==YAC) console.log("YAC ");
+			else if(HTX==CDC) console.log("CDC ");
+			else if(HTX==CAC) console.log("CAC ");
+			//if(HTX) for(var i=0;HTX[i][0]!=-1;i++) console.log("["+HTX[i][0].toString(16)+" "+HTX[i][1].toString(16)+" "+HTX[i][2].toString(16)+"]");
+		}
+	}
+	if(drioffset){	//define restart interval
+		f=drioffset;
+		restartInt=(filebuf[f++]<<8)+filebuf[f++];
+		console.log("Restart interval: "+restartInt);
+	}
+	if(sof0){		//start of frame
+		MCUdef=new Array;
+		f=sof0;
+		console.log("Precision="+filebuf[f++]);
+		Y=(filebuf[f++]<<8)+filebuf[f++];
+		X=(filebuf[f++]<<8)+filebuf[f++];
+		comp=filebuf[f++];
+		mcuPixX=0,mcuPixY=0;
+		console.log(X+"x"+Y+" "+comp+" components:\n");
+		for(;comp;comp--){
+			id=filebuf[f++];
+			sfact=filebuf[f++];
+			dest=filebuf[f++];
+			if(dest==0) type='Y';
+			if(dest==1) type='C';
+			console.log("ID:"+id+" ["+sfact.toString(16)+"] Dest:"+dest);
+			for(n=(sfact>>4)*(sfact&0xF);n;n--) MCUdef.push(type);
+			if((sfact>>4)>mcuPixX) mcuPixX=(sfact>>4);
+			if((sfact&0xF)>mcuPixY) mcuPixY=(sfact&0xF);
+		}
+		mcuPixX*=8;
+		mcuPixY*=8;
+		console.log("MCU: "+MCUdef+" ("+mcuPixX+"x"+mcuPixY+" pixel)");
+		Mx=Math.ceil(X/mcuPixX);
+		My=Math.ceil(Y/mcuPixY);
+		numMCU=Mx*My;
+		imgInfo=filename+"<br>"+X+"x"+Y+"px  MCU: "+MCUdef+" ("+mcuPixX+"x"+mcuPixY+"px) ["+Mx+"x"+My+"="+Mx*My+" MCU]";
+		document.getElementById("imgInfo").innerHTML=imgInfo;
+		MCUarray=new Array;
+		console.log("["+Mx+"x"+My+"="+Mx*My+" MCU]");
+		Rptr=scanoffset;
+		Rbitcount=0;
+		Rnumbit=0;
+		mcucount=0;
+		var decode_result,restartCount=0;
+		var rstErrStat_extra=0,errnum,next_rstnum=0,rst;
+		iblock=0;
+		rstErrStat=new Array;
+		for(i=0;i<50;i++) rstErrStat[i]=0;
+		var row=0;
+		var col=0;
+		var addRestart2NextMCU=-1;
+		for(Rbitcount=scanoffset*8;Rbitcount<endoffset*8-4;){	//decode MCU (-2 bytes to end at last MCU)
+			if(iblock==0){
+				//create MCU structure
+				bufferY=new ArrayBuffer(mcuPixX*mcuPixY);
+				bufferC1=new ArrayBuffer(mcuPixX*mcuPixY);
+				bufferC2=new ArrayBuffer(mcuPixX*mcuPixY);
+				viewY=new Uint8Array(bufferY);
+				viewC1=new Uint8Array(bufferC1);
+				viewC2=new Uint8Array(bufferC2);
+				for(j=0;j<viewY.length;j++) viewY[j]=viewC1[j]=viewC2[j]=255;
+				MCUarray[mcucount]={
+					bufferY: bufferY,		//pre-decoded Y data
+					bufferC1: bufferC1,		//pre-decoded C1 data
+					bufferC2: bufferC2,		//pre-decoded C2 data
+					viewY: viewY,
+					viewC1: viewC1,
+					viewC2: viewC2,
+					blocks: new Array,
+					row: row,
+					col: col,
+					offset: Rbitcount,
+					restart: -1
+				}
+				col++;
+				if(col==Mx){
+					col=0;
+					row++;
+				}
+
+			}
+			//Create component block structure
+			MCUarray[mcucount].blocks[iblock]={
+				blockType:MCUdef[iblock],
+				DC: 0,				//effective DC component (after delta coding)
+				coeff: new Array,	//raw coefficient array (ordered as in file)
+				errors: "",
+				offset: Rbitcount
+			}
+			if(MCUdef[iblock]=='Y')	decode_result=decodeBlock(Y_BLOCK);
+			else if(MCUdef[iblock]=='C') decode_result=decodeBlock(C_BLOCK);
+			if((decode_result&0xF)==DECODE_PARTIAL_RESTART){
+				if(MCUdef[iblock]=='Y') Ny++;
+				if(MCUdef[iblock]=='C') Nc++;
+				iblock++;
+			}
+			if((decode_result&0xF)==DECODE_RESTART||(decode_result&0xF)==DECODE_PARTIAL_RESTART){
+				rst=decode_result>>8;
+				if(restartCount<restartInt){
+					if(iblock<MCUdef.length){
+						MCUarray[mcucount].blocks[iblock].errors+=
+							" Restart interval error ("+(restartCount-restartInt)+": "+
+							restartCount+" MCU instead of "+restartInt+")";
+						console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
+					}
+				}
+				restartCount=0;
+				if(iblock>0){	//some data was present; could be complete or partial
+					extractPixel(mcucount);
+					if(iblock<MCUdef.length){
+						//MCUarray[mcucount].blocks[iblock].errors+=
+						var ee=" error: missing component  ("+iblock+" instead of "+MCUdef.length+")";
+						console.log("MCU"+ee);
+					}
+					mcucount++;
+					iblock=0;
+				}
+				if(rst!=next_rstnum){
+/*					MCUarray[mcucount].blocks[iblock].errors+=
+						" Restart marker # error ("+rst+" instead of "+next_rstnum+")";
+					console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
+*/				}
+				next_rstnum=rst+1;
+				if(next_rstnum>7) next_rstnum=0;
+				addRestart2NextMCU=rst;
+			}
+			else if((decode_result&0xF)==DECODE_OK){
+				if(restartInt>0&&iblock==0){	//on new MCU only
+					restartCount++;
+					errnum=restartCount-restartInt;
+					if(errnum>0){
+						MCUarray[mcucount].blocks[iblock].errors+=
+							" Restart interval error (+"+errnum+": "+restartCount+" MCU instead of "+restartInt+")";
+						console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
+						if(errnum<50) rstErrStat[errnum]++;
+						else rstErrStat_extra=1;
+					}
+				}
+				if(MCUdef[iblock]=='Y') Ny++;
+				if(MCUdef[iblock]=='C') Nc++;
+				iblock++;
+				if(iblock>=MCUdef.length){	//end of MCU: decode coefficients
+					iblock=0;
+					if(addRestart2NextMCU>-1){ 
+						MCUarray[mcucount].restart=addRestart2NextMCU;
+						addRestart2NextMCU=-1;
+					}
+					extractPixel(mcucount);
+					mcucount++;
+				}
+			}
+			else if(decode_result==DECODE_EOI){
+				console.log("End of image");
+				if(iblock==0) MCUarray.pop();	//remove this empty block
+				else{
+					for(var b=iblock;b<MCUdef.length;b++){
+						MCUarray[mcucount].blocks[b]={
+							blockType:MCUdef[b],
+							DC: 0,				//effective DC component (after delta coding)
+							coeff: [0],	//raw coefficient array (ordered as in file)
+							errors: "EOI"
+						}
+					}
+				}					
+				break;
+			}
+			else if(decode_result==DECODE_EOF){
+				console.log("End of data");
+				if(iblock==0) MCUarray.pop();	//remove this empty block
+				else{
+					for(var b=iblock;b<MCUdef.length;b++){
+						MCUarray[mcucount].blocks[b]={
+							blockType:MCUdef[b],
+							DC: 0,				//effective DC component (after delta coding)
+							coeff: [0],	//raw coefficient array (ordered as in file)
+							errors: "EOF"
+						}
+					}
+				}					
+				break;
+			}
+			else if((decode_result&0xF)==DECODE_ERR){
+				getbit(1);	//advance 1 bit
+				ErrCnt++;
+				if(iblock==0) MCUarray.pop();	//remove this empty block
+			}
+			else{
+				console.log("Unknown error (0x"+decode_result.toString(16)+")");
+					//break;
+			}					
+		}
+		if(ErrCnt>0) console.log("Decode skip: "+ErrCnt);
+		imgInfo+="<br>"+mcucount+" MCU found";
+		document.getElementById("imgInfo").innerHTML=imgInfo;
+		ctx.canvas.width=Mx*mcuPixX;
+		displayRows=Math.ceil(mcucount/Mx);
+		ctx.canvas.height=displayRows*mcuPixY;	//enough rows for all MCUs
+		ctx.translate(0.5, 0.5);
+		ctx.imageSmoothingEnabled = false;
+		ctx.setLineDash([5,5]);
+		ctxZoom.imageSmoothingEnabled = false;
+		ctxZoom.canvas.width=mcuPixX*10;
+		ctxZoom.canvas.height=mcuPixY*10;
+		ctxZoom.canvas.style.width=mcuPixX*10;
+		ctxZoom.canvas.style.height=mcuPixY*10;
+		ctxPicture.imageSmoothingEnabled = false;
+		ctxPicture.canvas.width=document.documentElement.clientWidth-ctxZoom.canvas.width;
+		ctxPicture.canvas.height=ctx.canvas.height/ctx.canvas.width*ctxPicture.canvas.width;
+		if(ctxPicture.canvas.height>document.documentElement.clientHeight-10){	//too high
+			ctxPicture.canvas.height=document.documentElement.clientHeight-10;
+			ctxPicture.canvas.width=ctx.canvas.width/ctx.canvas.height*ctxPicture.canvas.height;
+		}
+		document.getElementById("rstdiv").style.display=restartInt>-1?'':'none';
+		drawRestart=document.querySelector("#rst").checked;
+		render(-1,document.getElementById("layer").value);
+	}
+	console.timeEnd("decode");
+}
+
+//draw MCU using pre-calculated Y,Cb,Cr arrays
+//block=MCU index; draw all MCUs if block<0
+//mode=RGB,Y,C1,C2
+function render(block=-1,mode="RGB"){
+	if(MCUarray.length==0) return;
+	console.time("render");
+	row=0,col=0,renderall=0;
+	max=MCUarray.length;
+	if(block>=0&&block<max){
+		row=Math.floor(block/Mx);
+		col=block-row*Mx;
+		max=block+1;
+	}
+	else{
+		block=0;
+		renderall=1;
+	}
+	for(i=block;i<max;i++){
+		var imgData = ctx.createImageData(mcuPixX,mcuPixY);
+		if(mode=="RGB"){
+			for(j=0;j<MCUarray[i].viewY.length;j++){
+				x=YCrCb2RGB(MCUarray[i].viewY[j],MCUarray[i].viewC1[j],MCUarray[i].viewC2[j]);
+				imgData.data[j*4]=x.R;
+				imgData.data[j*4+1]=x.G;
+				imgData.data[j*4+2]=x.B;
+				imgData.data[j*4+3]=255;
+			}
+		}
+		else if(mode=="Y"){
+			for(j=0;j<MCUarray[i].viewY.length;j++){
+				imgData.data[j*4]=MCUarray[i].viewY[j];
+				imgData.data[j*4+1]=MCUarray[i].viewY[j];
+				imgData.data[j*4+2]=MCUarray[i].viewY[j];
+				imgData.data[j*4+3]=255;
+			}
+		}
+		else if(mode=="C1"){
+			for(j=0;j<MCUarray[i].viewY.length;j++){
+				imgData.data[j*4]=MCUarray[i].viewC1[j];
+				imgData.data[j*4+1]=MCUarray[i].viewC1[j];
+				imgData.data[j*4+2]=MCUarray[i].viewC1[j];
+				imgData.data[j*4+3]=255;
+			}
+		}
+		else if(mode=="C2"){
+			for(j=0;j<MCUarray[i].viewY.length;j++){
+				imgData.data[j*4]=MCUarray[i].viewC2[j];
+				imgData.data[j*4+1]=MCUarray[i].viewC2[j];
+				imgData.data[j*4+2]=MCUarray[i].viewC2[j];
+				imgData.data[j*4+3]=255;
+			}
+		}
+		ctx.putImageData(imgData,mcuPixX*col,mcuPixY*row);
+		for(j=0;j<MCUarray[i].blocks.length;j++){	//draw crossed red if there are any errors
+			if(MCUarray[i].blocks[j].errors!=""){
+				ctx.beginPath();
+				ctx.lineWidth = "1";
+				ctx.strokeStyle = "red";
+				ctx.rect(mcuPixX*col,mcuPixY*row,mcuPixX-1,mcuPixY-1);
+				ctx.moveTo(mcuPixX*col,mcuPixY*row);
+				ctx.lineTo(mcuPixX*(col+1),mcuPixY*(row+1));
+				ctx.moveTo(mcuPixX*(col+1),mcuPixY*row);
+				ctx.lineTo(mcuPixX*col,mcuPixY*(row+1));
+				ctx.stroke();
+				j=MCUarray[i].blocks.length;
+			}
+		}
+		if(drawRestart&&MCUarray[i].restart>-1){
+			ctx.beginPath();
+			ctx.lineWidth = "1";
+			ctx.strokeStyle = "green";
+			ctx.moveTo(mcuPixX*col,mcuPixY*(row+1)-1);
+			//ctx.lineTo(mcuPixX*(col),mcuPixY*(row+1)-1);
+			//ctx.lineTo(mcuPixX*(col+1),mcuPixY*(row+1)-1);
+			ctx.stroke();
+			ctx.font = mcuPixY+"px Arial";
+			ctx.fillStyle = "green";
+			ctx.fillText("R"+MCUarray[i].restart, mcuPixX*col,mcuPixY*(row+1)-2); 
+		}
+		col++;
+		if(col==Mx){
+			col=0;
+			row++;
+		}
+	}
+	if(renderall){
+		var imgData = ctx.createImageData(mcuPixX,mcuPixY);
+		for(j=0;j<imgData.data.length;j++) imgData.data[j]=255;	
+		for(;col<Mx;col++) ctx.putImageData(imgData,mcuPixX*col,mcuPixY*row);
+	}
+	ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+	console.timeEnd("render");
+}
+
+//draw MCU on zoom canvas
+function renderZoom(block,mode="RGB"){
+	max=MCUarray.length;
+	var imgData = ctxZoom.createImageData(mcuPixX,mcuPixY);	//****
+	var i=block;
+	if(mode=="RGB"){
+		for(j=0;j<MCUarray[i].viewY.length;j++){
+			x=YCrCb2RGB(MCUarray[i].viewY[j],MCUarray[i].viewC1[j],MCUarray[i].viewC2[j]);
+			imgData.data[j*4]=x.R;
+			imgData.data[j*4+1]=x.G;
+			imgData.data[j*4+2]=x.B;
+			imgData.data[j*4+3]=255;
+		}
+	}
+	else if(mode=="Y"){
+		for(j=0;j<MCUarray[i].viewY.length;j++){
+			imgData.data[j*4]=MCUarray[i].viewY[j];
+			imgData.data[j*4+1]=MCUarray[i].viewY[j];
+			imgData.data[j*4+2]=MCUarray[i].viewY[j];
+			imgData.data[j*4+3]=255;
+		}
+	}
+	else if(mode=="C1"){
+		for(j=0;j<MCUarray[i].viewY.length;j++){
+			imgData.data[j*4]=MCUarray[i].viewC1[j];
+			imgData.data[j*4+1]=MCUarray[i].viewC1[j];
+			imgData.data[j*4+2]=MCUarray[i].viewC1[j];
+			imgData.data[j*4+3]=255;
+		}
+	}
+	else if(mode=="C2"){
+		for(j=0;j<MCUarray[i].viewY.length;j++){
+			imgData.data[j*4]=MCUarray[i].viewC2[j];
+			imgData.data[j*4+1]=MCUarray[i].viewC2[j];
+			imgData.data[j*4+2]=MCUarray[i].viewC2[j];
+			imgData.data[j*4+3]=255;
+		}
+	}
+	const offscreen = new OffscreenCanvas(mcuPixX,mcuPixY);
+	offscreen.getContext("2d").putImageData(imgData, 0, 0);
+	ctxZoom.imageSmoothingEnabled = false;
+	ctxZoom.drawImage(offscreen,0,0,mcuPixX*10,mcuPixY*10);
+}
+
+//convert coefficients in MCUarray[MCU] to pixel data
+//calculates DC value from the last relevant block (same or previous MCU)
+function extractPixel(MCU){
+	if(MCU>MCUarray.length) return;
+	ycount=0;
+	ccount=0;
+	//map Y block data to MCU coordinates: [row multiplier,column shift]
+	if(MCUdef.length>3) shiftR=[[16,0],[16,8],[16,128],[16,136]];
+	else shiftR=[[8,0]];
+	for(i=MCUarray[MCU].blocks.length;i<MCUdef.length;i++){	//create missing blocks
+		MCUarray[MCU].blocks[i]={
+				blockType:MCUdef[i],
+				DC: 0,				//effective DC component (after delta coding)
+				coeff: [0],			//raw coefficient array (ordered as in file)
+				errors: "",
+				offset: 0
+			}
+	}
+	for(i=0;i<MCUarray[MCU].blocks.length;i++){
+		if(MCUarray[MCU].blocks[i].blockType=="Y"){
+			DC=MCUarray[MCU].blocks[i].coeff[0];
+			if(i>0&&MCUarray[MCU].blocks[i-1].blockType=="Y") 
+				DC+=MCUarray[MCU].blocks[i-1].DC;	//DC from previous Y block
+			else if(MCU>0&&MCUarray[MCU].restart==-1){	//previous MCU, DC from last Y block (only if there is no restart marker)
+				DC+=MCUarray[MCU-1].blocks[MCUdef.length-3].DC;
+			}
+			MCUarray[MCU].blocks[i].DC=DC;
+			l=MCUarray[MCU].blocks[i].coeff.length;
+			if(l!=64){
+				MCUarray[MCU].blocks[i].coeff.length=64;
+				MCUarray[MCU].blocks[i].coeff.fill(0,l);
+			}
+			var coeff1=zigzag2square(MCUarray[MCU].blocks[i].coeff);
+			coeff1[0]=DC;
+			y=idct2dC(dequantizeY(coeff1));
+			y=y.map(function(x){ a=Math.round(x)+128; if(a<0) a=0; if(a>255) a=255; return a});
+/*			             i=0     i=1          
+			0   7   	0   7  8   15
+			8   15		16  23 24  31  
+			56  63		112
+			              i=2     i=3
+						128 135 136 143
+						144						
+*/
+			var r=0,c=0;
+			for(j=0;j<64;j++){	//map blocks to MCU coordinates 
+				var p=r*shiftR[ycount][0]+shiftR[ycount][1]+c;
+				MCUarray[MCU].viewY[p]=y[j];
+				c++;
+				if(c==8){
+					c=0;
+					r++;
+				}
+			}			
+			ycount++;
+		}
+		else if(MCUarray[MCU].blocks[i].blockType=="C"||MCUarray[MCU].blocks[i].blockType=="C2"&&i>=MCUdef.length-2){
+			if(i==MCUdef.length-1) MCUarray[MCU].blocks[i].blockType="C2"; //mark second C as C2.
+			DC=MCUarray[MCU].blocks[i].coeff[0];
+			if(MCU>0&&MCUarray[MCU].restart==-1){	//only if there is no restart marker
+				DC+=MCUarray[MCU-1].blocks[i].DC;
+			}
+			MCUarray[MCU].blocks[i].DC=DC;			
+			l=MCUarray[MCU].blocks[i].coeff.length;
+			if(l!=64){
+				MCUarray[MCU].blocks[i].coeff.length=64;
+				MCUarray[MCU].blocks[i].coeff.fill(0,l);
+			}
+			var coeff1=zigzag2square(MCUarray[MCU].blocks[i].coeff);
+			coeff1[0]=DC;
+			y=idct2dC(dequantizeC(coeff1));
+			y=y.map(function(x){ a=Math.round(x)+128; if(a<0) a=0; if(a>255) a=255; return a});
+			if(MCUarray[MCU].blocks.length==3){	//YCC	8x8
+				for(j=0;j<64;j++){	//map blocks to MCU coordinates 
+					if(MCUarray[MCU].blocks[i].blockType=="C"){
+						MCUarray[MCU].viewC1[j]=y[j];
+					}
+					if(MCUarray[MCU].blocks[i].blockType=="C2"){
+						MCUarray[MCU].viewC2[j]=y[j];
+					}
+				}
+			}
+			if(MCUarray[MCU].blocks.length==4){	//YYCC	16x8
+				for(j=0;j<64;j++){	//map blocks to MCU coordinates 
+					if(MCUarray[MCU].blocks[i].blockType=="C"){
+						MCUarray[MCU].viewC1[j*2]=y[j];
+						MCUarray[MCU].viewC1[j*2+1]=y[j];
+					}
+					if(MCUarray[MCU].blocks[i].blockType=="C2"){
+						MCUarray[MCU].viewC2[j*2]=y[j];
+						MCUarray[MCU].viewC2[j*2+1]=y[j];
+					}
+				}
+			}
+			if(MCUarray[MCU].blocks.length==6){	//YYYYCC	16x16
+			//0011..77		0 1 2..15
+			//0011..77		16..   31
+			//8899..1515	32..   47
+			//8899..1515	48..   63
+			//4848..6363    240...255
+				var r=0,c=0;
+				for(j=0;j<64;j++){	//map blocks to MCU coordinates 
+					var p=r*32+c*2;
+					if(MCUarray[MCU].blocks[i].blockType=="C"){
+						MCUarray[MCU].viewC1[p]=y[j];
+						MCUarray[MCU].viewC1[p+1]=y[j];
+						MCUarray[MCU].viewC1[p+16]=y[j];
+						MCUarray[MCU].viewC1[p+17]=y[j];
+					}
+					if(MCUarray[MCU].blocks[i].blockType=="C2"){
+						MCUarray[MCU].viewC2[p]=y[j];
+						MCUarray[MCU].viewC2[p+1]=y[j];
+						MCUarray[MCU].viewC2[p+16]=y[j];
+						MCUarray[MCU].viewC2[p+17]=y[j];
+					}
+					c++;
+					if(c==8){
+						c=0;
+						r++;
+					}
+				}
+			}
+		}
+	}
+}
+
+//display or not Restart Markers
+function rstEnable(){
+	drawRestart=document.querySelector("#rst").checked;
+	render(-1,document.getElementById("layer").value);
+}
+
+//Set RST marker
+function rstSet(){
+	if(selectedMCU.i<0) return;
+	MCUarray[selectedMCU.i].restart=document.querySelector("#rstNum").value;
+	render(-1,document.getElementById("layer").value);
+}
+
+//Fix color difference between MCU(x,y) and MCU(x,y-1)
+//byc changing DC coefficient of the currently selected MCU
+function fixColorDiff(){
+	if(selectedMCU.i<0||colorFixList.length==0) return;
+	var refMCU=[];	//MCUs to be matched in color
+	var objMCU=[];	//MCUs that change in color
+	for(i=0;i<colorFixList.length;i++){
+		if(colorFixList[i].y>0){
+			refMCU.push(colorFixList[i].i-Mx);
+			objMCU.push(colorFixList[i].i);
+		}
+	}
+	for(bC=1;bC<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[bC].blockType!="C";bC++);
+	for(bC2=1;bC2<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[bC2].blockType!="C2";bC2++);
+	var refComp,objComp,deltaComp,deltaCompZ;
+	var xZ,x;
+	for(var m=0;m<refMCU.length;m++){
+		var R=refMCU[m];
+		var O=objMCU[m];
+		console.log("Null color difference; ref MCU:"+R+"  obj MCU:"+O);
+		//use secant method to find the root of f(X) i.e. f(X)=0:
+		//Xn+1=Xn-f(Xn)*(Xn-Xn-1)/(f(Xn)-f(Xn-1))
+		xZ={Y:MCUarray[O].blocks[0].coeff[0],
+			C1:MCUarray[O].blocks[bC].coeff[0],
+			C2:MCUarray[O].blocks[bC2].coeff[0]};
+		refComp=getAvgComponents(R,mcuPixX*(mcuPixY-1));	//average components, lower row
+		objComp=getAvgComponents(O,0);  	//average components, upper row
+		deltaComp={Y:objComp.Y-refComp.Y,C1:objComp.C1-refComp.C1,C2:objComp.C2-refComp.C2};
+		//console.log("x=["+xZ.Y+" "+xZ.C1+" "+xZ.C2+"] f(x)=["+deltaComp.Y+" "+deltaComp.C1+" "+deltaComp.C2+"]");
+		//make sure to start algorithm with significant difference
+		if(Math.abs(deltaComp.Y)>50) MCUarray[O].blocks[0].coeff[0]-=Math.round(deltaComp.Y);
+		else if(Math.abs(deltaComp.Y)>=0.5) MCUarray[O].blocks[0].coeff[0]+=MCUarray[O].blocks[0].DC>0?-50:50;
+		if(Math.abs(deltaComp.C1)>50) MCUarray[O].blocks[bC].coeff[0]-=Math.round(deltaComp.C1);
+		else if(Math.abs(deltaComp.C1)>=0.5)	MCUarray[O].blocks[bC].coeff[0]+=MCUarray[O].blocks[bC].DC>0?-50:50;
+		if(Math.abs(deltaComp.C2)>50) MCUarray[O].blocks[bC2].coeff[0]-=Math.round(deltaComp.C2);
+		else if(Math.abs(deltaComp.C2)>=0.5) MCUarray[O].blocks[bC2].coeff[0]+=MCUarray[O].blocks[bC2].DC>0?-50:50;
+		x={Y:MCUarray[O].blocks[0].coeff[0],
+			C1:MCUarray[O].blocks[bC].coeff[0],
+			C2:MCUarray[O].blocks[bC2].coeff[0]};
+		deltaCompZ=deltaComp;
+		extractPixel(O);	//update DC values and pixel data
+		objComp=getAvgComponents(O,0);  	//average components, upper row
+		deltaComp={Y:objComp.Y-refComp.Y,C1:objComp.C1-refComp.C1,C2:objComp.C2-refComp.C2};
+		//console.log("x=["+x.Y+" "+x.C1+" "+x.C2+"] f(x)=["+deltaComp.Y+" "+deltaComp.C1+" "+deltaComp.C2+"]");
+		for(var j=0;j<10;j++){
+			if(deltaComp.Y!=deltaCompZ.Y) MCUarray[O].blocks[0].coeff[0]=Math.round(x.Y-deltaComp.Y*(x.Y-xZ.Y)/(deltaComp.Y-deltaCompZ.Y));
+			if(deltaComp.C1!=deltaCompZ.C1) MCUarray[O].blocks[bC].coeff[0]=Math.round(x.C1-deltaComp.C1*(x.C1-xZ.C1)/(deltaComp.C1-deltaCompZ.C1));
+			if(deltaComp.C2!=deltaCompZ.C2) MCUarray[O].blocks[bC2].coeff[0]=Math.round(x.C2-deltaComp.C2*(x.C2-xZ.C2)/(deltaComp.C2-deltaCompZ.C2));
+			xZ=x;
+			x={Y:MCUarray[O].blocks[0].coeff[0],
+				C1:MCUarray[O].blocks[bC].coeff[0],
+				C2:MCUarray[O].blocks[bC2].coeff[0]};
+			deltaCompZ=deltaComp;
+			extractPixel(O);	//update DC values and pixel data
+			objComp=getAvgComponents(O,0);  	//average components, upper row
+			deltaComp={Y:objComp.Y-refComp.Y,C1:objComp.C1-refComp.C1,C2:objComp.C2-refComp.C2};		
+			//console.log("x=["+x.Y+" "+x.C1+" "+x.C2+"] f(x)=["+deltaComp.Y+" "+deltaComp.C1+" "+deltaComp.C2+"]");
+			if(Math.abs(deltaComp.Y)<0.5&&Math.abs(deltaComp.C1)<0.5&&Math.abs(deltaComp.C2)<0.5) j=100;
+		}
+		console.log("final delta:["+deltaComp.Y+" "+deltaComp.C1+" "+deltaComp.C2+"]");
+		for(var i=O;m+1<objMCU.length&&i<=objMCU[m+1];i++) extractPixel(i);	//update DC values and pixel data
+	}
+	for(var i=O;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+	render(-1,document.getElementById("layer").value);
+	selectedUpdate();
+	colorFixList.length=0;
+}
+
+//Calculate the average of every component in the row at certain offset 
+//N=MCU number
+function getAvgComponents(N,offset){
+	var Y=0,C1=0,C2=0;
+	for(var i=0;i<mcuPixX;i++){
+		Y+=MCUarray[N].viewY[i+offset];
+		C1+=MCUarray[N].viewC1[i+offset];
+		C2+=MCUarray[N].viewC2[i+offset];
+	}
+	Y=Y/mcuPixX;
+	C1=C1/mcuPixX;
+	C2=C2/mcuPixX;
+	return {Y:Y,C1:C1,C2:C2};
+}
+
+//experimental back search algorithm
+//proceed backwards from selected MCU and find all possible starting points
+//that produce valid blocks. At MCU level store variants as lists and display
+//so the user can select which one looks better  
+function backSearch(){
+	if(selectedMCU.i<0) return;
+	dlg=document.getElementById("backSearchDialog");
+	div=document.getElementById("srcRes");
+	while(div.firstChild) div.removeChild(div.firstChild);
+	numSrcMax=parseInt(dlg.querySelector("#variants").value);
+	numSrcMcu=parseInt(dlg.querySelector("#mcu").value);
+	bitAddr=MCUarray[selectedMCU.i].offset;
+	var p,i,j,k;
+	var nf=0;
+	var dccoeff;
+	bufferY=new ArrayBuffer(mcuPixX*mcuPixY);
+	bufferC1=new ArrayBuffer(mcuPixX*mcuPixY);
+	bufferC2=new ArrayBuffer(mcuPixX*mcuPixY);
+	viewY=new Uint8Array(bufferY);
+	viewC1=new Uint8Array(bufferC1);
+	viewC2=new Uint8Array(bufferC2);
+	for(j=0;j<viewY.length;j++) viewY[j]=viewC1[j]=viewC2[j]=255;
+	MCUarray[mcucount]={
+		bufferY: bufferY,		//pre-decoded Y data
+		bufferC1: bufferC1,		//pre-decoded C1 data
+		bufferC2: bufferC2,		//pre-decoded C2 data
+		viewY: viewY,
+		viewC1: viewC1,
+		viewC2: viewC2,
+		blocks: new Array,
+		row: row,
+		col: col,
+		offset: 0,
+		restart: -1
+	}
+	for(var b=0;b<MCUdef.length;b++){
+		MCUarray[mcucount].blocks[b]={
+			blockType:MCUdef[b],
+			DC: 0,				//effective DC component (after delta coding)
+			coeff: [],	//raw coefficient array (ordered as in file)
+			errors: ""
+		}
+	}
+	MCUarray[mcucount].blocks[MCUdef.length-1].blockType="C2";
+	iblock=0;
+	//new temporary MCU to visualize blocks found
+	bufferY=new ArrayBuffer(mcuPixX*mcuPixY);
+	bufferC1=new ArrayBuffer(mcuPixX*mcuPixY);
+	bufferC2=new ArrayBuffer(mcuPixX*mcuPixY);
+	viewY=new Uint8Array(bufferY);
+	viewC1=new Uint8Array(bufferC1);
+	viewC2=new Uint8Array(bufferC2);
+	for(j=0;j<viewY.length;j++) viewY[j]=viewC1[j]=viewC2[j]=255;
+	t=mcucount+1;
+	MCUarray[t]={
+		bufferY: bufferY,		//pre-decoded Y data
+		bufferC1: bufferC1,		//pre-decoded C1 data
+		bufferC2: bufferC2,		//pre-decoded C2 data
+		viewY: viewY,
+		viewC1: viewC1,
+		viewC2: viewC2,
+		blocks: new Array,
+		row: row,
+		col: col,
+		offset: 0,
+		restart: -1
+	}
+	//MCUsrcArray contains lists of MCU; each list (itself an array) is a possible solution
+	MCUsrcArray=[[structuredClone(MCUarray[selectedMCU.i])]];	//init with starting MCU
+	for(m=0;m<numSrcMcu;m++){
+		for(j=0;j<MCUsrcArray.length;){//j++){
+			var Z=MCUsrcArray[j].length-1;
+			var MCUrec=[];
+			var srcAddr=MCUsrcArray[j][Z].offset;
+			for(i=MCUdef.length-1;i>=0;i--){
+				//console.log(i+MCUdef[i]);
+				if(MCUdef[i]=='Y') backSearchBlock(MCUrec,Y_BLOCK,srcAddr);
+				if(MCUdef[i]=='C') backSearchBlock(MCUrec,C_BLOCK,srcAddr);
+				if(MCUrec.length==0){
+					i=1000;
+					//console.log("Can't find any more valid blocks");
+					break;
+				}
+			}
+			if(i<1000) console.log("End of MCU, found: "+MCUrec.length);
+			else{
+				MCUsrcArray.splice(j,1);	//remove current MCU list
+				console.log("combination removed");
+				continue;
+			}
+			DCYstart=MCUsrcArray[j][Z].blocks[0].DC-MCUsrcArray[j][Z].blocks[0].coeff[0];
+			DCCstart=MCUsrcArray[j][Z].blocks[MCUdef.length-2].DC-MCUsrcArray[j][Z].blocks[MCUdef.length-2].coeff[0];
+			DCC2start=MCUsrcArray[j][Z].blocks[MCUdef.length-1].DC-MCUsrcArray[j][Z].blocks[MCUdef.length-1].coeff[0];
+			for(i=0;i<MCUrec.length;i++){
+				len=MCUrec[i].length;
+				MCUrec[i].reverse();	//now in order of offset
+				if(len!=MCUdef.length) console.log("!!length mismatch");
+				if(MCUrec[i][len-1].type!="C") console.log("!!type mismatch");
+				if(MCUrec[i][len-2].type!="C") console.log("!!type mismatch");
+				MCUrec[i][len-1].DC=DCC2start;
+				MCUrec[i][len-2].DC=DCCstart;
+				MCUrec[i][len-3].DC=DCYstart;
+				for(b=len-4;b>=0;b--){	//back-calculate DC
+					if(MCUrec[i][b].type!="Y") console.log("!!type mismatch");
+					MCUrec[i][b].DC=MCUrec[i][b+1].DC-MCUrec[i][b+1].coeff[0];			
+				}
+				MCUarray[t].offset=MCUrec[i][0].offset;
+				for(k=0;k<len;k++){
+					MCUarray[t].blocks[k]={
+						blockType:MCUdef[k],
+						DC:MCUrec[i][k].DC,
+						coeff:MCUrec[i][k].coeff,
+						errors:"",
+						offset: MCUrec[i][k].offset
+					}
+				}
+				//back-calculation to obtain right DC: extractPixel looks at previous MCU in the array
+				MCUarray[mcucount].blocks[MCUdef.length-3].DC=MCUarray[t].blocks[0].DC-MCUarray[t].blocks[0].coeff[0];
+				MCUarray[mcucount].blocks[MCUdef.length-2].DC=MCUarray[t].blocks[MCUdef.length-2].DC-MCUarray[t].blocks[MCUdef.length-2].coeff[0];
+				MCUarray[mcucount].blocks[MCUdef.length-1].DC=MCUarray[t].blocks[MCUdef.length-1].DC-MCUarray[t].blocks[MCUdef.length-1].coeff[0];
+				extractPixel(t);
+	//filtering to be added: can eliminate the variant if this MCU does not fulfill some criteria like color diff or other 
+	//...
+				MCUsrcArray.splice(j,0,MCUsrcArray[j].slice());	//insert a copy of current MCU list
+				MCUsrcArray[j+1].push(structuredClone(MCUarray[t])); 	//add MCU found at top
+			}
+			MCUsrcArray.splice(j,1);	//remove current MCU list
+			for(;j<MCUsrcArray.length&&srcAddr==MCUsrcArray[j][Z].offset;j++);	//jump over elements added to the same original list 
+		}	//end of single MCU search
+	}	//end of multiple MCU search
+	for(j=0;j<MCUsrcArray.length;j++){
+		info="["+j+"] \n";
+		for(k=1;k<MCUsrcArray[j].length;k++){
+			for(z=0;z<MCUsrcArray[j][k].blocks.length;z++){
+				info+="@0x"+(MCUsrcArray[j][k].blocks[z].offset>>3).toString(16).toUpperCase()+"."+(MCUsrcArray[j][k].blocks[z].offset&7)+" ";
+				info+=MCUsrcArray[j][k].blocks[z].blockType+", ";
+				info+="DC: "+MCUsrcArray[j][k].blocks[z].DC+" [";
+				info+=MCUsrcArray[j][k].blocks[z].coeff.toString().replace(/(,0)+$/,"");
+				info+="]\n";
+			}
+			info+="-------------\n";
+		}
+		console.log(info);
+	}
+	div.insertAdjacentHTML("beforeend","Found "+MCUsrcArray.length+" combinations<br>");
+	for(j=0;j<MCUsrcArray.length;j++){
+		var Csolution=document.createElement("CANVAS");
+		var Cctx=Csolution.getContext("2d");
+		Cctx.canvas.width=mcuPixX*MCUsrcArray[j].length;
+		Cctx.canvas.height=mcuPixY;
+		var imgData = Cctx.createImageData(mcuPixX,mcuPixY);
+		for(k=0;k<MCUsrcArray[j].length;k++){
+			for(z=0;z<MCUsrcArray[j][k].viewY.length;z++){
+				x=YCrCb2RGB(MCUsrcArray[j][k].viewY[z],MCUsrcArray[j][k].viewC1[z],MCUsrcArray[j][k].viewC2[z]);
+				imgData.data[z*4]=x.R;
+				imgData.data[z*4+1]=x.G;
+				imgData.data[z*4+2]=x.B;
+				imgData.data[z*4+3]=255;
+			}
+			Cctx.putImageData(imgData,mcuPixX*(MCUsrcArray[j].length-k),0);	//add to strip
+		}
+		div.insertAdjacentHTML("beforeend",
+		"<input type='radio' id="+j+" name='solution' value="+j+"><label for="+j+">"+(j+1)+"</label>");
+		div.appendChild(Csolution);
+		div.insertAdjacentHTML("beforeend","<br>");
+	}
+	MCUarray.length=mcucount;	//back to original size
+}
+
+//insert the desired chain of MCU contained in MCUsrcArray at the selected position (backwards)
+function backSrcInsert(){
+	if(selectedMCU.i<0) return;
+	dlg=document.getElementById("backSearchDialog");
+	div=document.getElementById("srcRes");
+	var selected = dlg.querySelector('input[type=radio][name=solution]:checked');
+	if(selected==null) return;
+	sel=selected.value;
+	for(var i=1;i<MCUsrcArray[sel].length;i++){
+		MCUarray.splice(selectedMCU.i,0,structuredClone(MCUsrcArray[sel][i]));
+	}
+	mcucount=MCUarray.length;
+	for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+	dlg.close();
+	render(-1,document.getElementById("layer").value);	
+	ctx.strokeStyle = "yellow";
+	ctx.beginPath();
+	ctx.lineWidth = "1";
+	var row=selectedMCU.y;
+	var col=selectedMCU.x;
+	for(var i=0;i<MCUsrcArray[sel].length-1;i++){
+		ctx.rect(col*mcuPixX,row*mcuPixY,mcuPixX-1,mcuPixY-1);
+		col++;
+		if(col==Mx){
+			row++;
+			col=0;
+		}
+	}
+	ctx.stroke();
+	selectedMCU.x=col;
+	selectedMCU.y=row;
+	selectedMCU.i=row*Mx+col;
+	selectedUpdate();
+	mcucount=MCUarray.length;
+	document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+}
+
+numSrcMax=100
+//search valid block and add to block list
+//type=Y_BLOCK or C_BLOCK
+//initSrcAddr=initial search address
+function backSearchBlock(MCUrec,type,initSrcAddr){
+	var p,i=0;
+	var nf=0;
+	var dccoeff,bitAddr;
+	if(type==Y_BLOCK) typeT="Y";
+	else if(type==C_BLOCK) typeT="C";
+	else return;
+	if(MCUrec.length==0){
+		bitAddr=initSrcAddr;
+//		console.log(typeT+"["+i+"]@"+(bitAddr>>3).toString(16)+"."+(bitAddr&7));
+		nf=0;
+		for(p=bitAddr-2;nf<numSrcMax&&p>bitAddr-1000;p--){
+			MCUarray[mcucount].blocks[0].coeff.length=0;
+			setBitAddr(p);
+			decode_result=decodeBlock(type);
+			if((decode_result&0xF)==DECODE_OK&&Rbitcount==bitAddr){
+				nf++;
+				info=" ["+MCUarray[mcucount].blocks[0].coeff.toString().replace(/(,0)+$/,"");
+				info+="] ("+(bitAddr-p)+"bit)";
+//				console.log((p>>3).toString(16)+"."+(p&7)+info);
+				MCUrec.push([{type:typeT,offset:p,length:bitAddr-p,coeff:MCUarray[mcucount].blocks[0].coeff.slice(),DC:0}]);
+			}
+		}
+	}
+	else for(i=0;i<MCUrec.length;){
+		bitAddr=MCUrec[i][MCUrec[i].length-1].offset;
+		var Z=MCUrec[i].length-1;
+//		console.log(typeT+"["+i+"]@"+(bitAddr>>3).toString(16)+"."+(bitAddr&7));
+		nf=0;
+		for(p=bitAddr-2;nf<numSrcMax&&p>bitAddr-1000;p--){
+			MCUarray[mcucount].blocks[0].coeff.length=0;
+			setBitAddr(p);
+			decode_result=decodeBlock(type);
+			if((decode_result&0xF)==DECODE_OK&&Rbitcount==bitAddr){
+				nf++;
+				info=" ["+MCUarray[mcucount].blocks[0].coeff.toString().replace(/(,0)+$/,"");
+				info+="] ("+(bitAddr-p)+"bit)";
+//				console.log((p>>3).toString(16)+"."+(p&7)+info);
+				MCUrec.splice(i,0,MCUrec[i].slice());	//insert a copy
+				MCUrec[i+1].push({type:typeT,offset:p,length:bitAddr-p,coeff:MCUarray[mcucount].blocks[0].coeff.slice(),DC:0}); //add at beginning
+			}
+		}
+		MCUrec.splice(i,1);	//remove shorter element
+		for(;i<MCUrec.length&&bitAddr==MCUrec[i][Z].offset;i++);
+	}
+	//console.log(MCUrec.length);
+}
+
+
+//read bit from buffer
+//res=0: reset bitcount
+//return value:
+//0 	-> bit=0
+//1 	-> bit=1
+//-1	-> res=0 or end reached
+//-2	-> EOI marker
+//-0xD0..-0xD9: -> RESTART marker #0..9
+function getbit(res){
+	bit=0;
+	if(!res){
+		Rnumbit=0;
+		bitstuffing=0;
+		return -1;
+	}
+	if(Rnumbit==0){
+		RDbyte=filebuf[Rptr++];
+		if(RDbyte!=null){
+			if(RDbyte==0xFF){	//bit stuffing or marker?
+				r2=filebuf[Rptr++];	//remove bit stuffing
+				if(r2==0xD9){
+					Rbitcount+=16;
+					return -2; //EOI
+				}
+				if(restartInt>=0&&r2>=0xD0&&r2<=0xD7){
+					Rbitcount+=16;
+					return -r2; //RESTART marker
+				}
+				bitstuffing=1;		//increase bit count by 8 bit on next byte
+			}
+		}
+		else return -1;
+	}
+	Rbitcount++;
+	bit=(RDbyte&0x80)?1:0;
+	RDbyte=(RDbyte<<=1)&0xFF;
+	Rnumbit++;
+	if(Rnumbit==8){
+		Rnumbit=0;
+		if(bitstuffing){	//increase offset when advancing next byte
+			Rbitcount+=8;
+			bitstuffing=0;
+		}
+	}
+	return bit;
+}
+
+//write bit to buffer
+//buf=0:	reset bit count
+//bit=-1:	set remaining bits to 1 and force byte write
+function putbit(bit,buf){
+	if(!buf){
+		Wnumbit=0;
+		WRbyte=0;
+		return;
+	}
+	if(bit==-1){
+		if(Wnumbit!=0){	//force write
+			WRbyte<<=(8-Wnumbit);
+			WRbyte|=(1<<(8-Wnumbit))-1;	//fill with 1
+			Wnumbit=8;
+		}
+	}
+	else{
+		WRbyte<<=1;
+		WRbyte+=bit&1;
+		Wnumbit++;
+	}
+	if(Wnumbit==8){
+		buf[Wptr++]=WRbyte;
+		if(WRbyte==0xFF) buf[Wptr++]=0x00;	//add bit stuffing
+		WRbyte=Wnumbit=0;
+	}
+}
+
+//set read bit address including getbit state
+function setBitAddr(bitAddr){
+	var addr0=Math.floor(bitAddr/8);
+	Rptr=addr0;
+	Rbitcount=addr0*8;
+	getbit(0);	//reset bitcount
+	for(;Rbitcount<bitAddr;getbit(1));	//back to correct bit address
+}
+
+//translate x expressed in n bits to integer according to
+//table F.1 in CCIT Rec. T81 document
+//size bits |   values
+//     0    |     0
+//     1    |    -1,1
+//     2    |  -3,-2,2,3
+//     3    | -7..-4,4..7
+//    ...        ...
+//    11    | -2047..-1024,1024..2047
+function decodeInt(x,n){
+		return x>=(1<<(n-1))?x:x-(1<<n)+1;
+}
+
+const EOF_ERR=-1000000;
+const EOI_MARKER=-2000000;
+const HTAB_ERR=-3000000;
+const RESTART_MARKER=-4000000;
+//decode DC value from buffer f using Huffman table Htable
+//return value:
+//EOF_ERR 			-> end of file
+//EOI_MARKER 		-> EOI marker
+//RESTART_MARKER-(0xD0..0xD7) -> restart marker
+//HTAB_ERR 			-> can't find a coefficient; file bit index back to starting point
+//[-2047..2047] 	-> DC value correctly decoded
+function decodeHvalDC(Htable,bs=0){
+	startAddr=Rbitcount;
+	var bit,h,i,j,x,y,str="";
+	x=0;
+	for(n=0;n<16;){	//max 16 bit
+		bit=getbit(1);
+		if(typeof(bs)==='object') str+=bit.toString();
+		if(bit==-1) return EOF_ERR;
+		else if(bit==-2) return EOI_MARKER;	//EOI marker
+		else if(bit<-2) return RESTART_MARKER+bit;	//RESTART marker
+		x=(x<<1)+bit;
+		h=0;
+		n++;
+		for(i=0;h!=-1&&Htable[i][0]<=n;i++){
+			h=Htable[i][1];		//prefix
+			if(n==Htable[i][0]&&x==h){ 	//right prefix
+				if(Htable[i][2]==0){	//0 bit prefix
+					if(typeof(bs)==='object') bs.str+="<font color='red'>"+str+"</font>";
+					return 0;
+				}
+				y=0;
+				if(typeof(bs)==='object') bs.str+="<font color='orange'>"+str+"</font>";
+				str="";
+				for(j=Htable[i][2];j;j--){	//value on j bits
+					bit=getbit(1);
+					if(typeof(bs)==='object') str+=bit.toString();
+					if(bit==-1) return EOF_ERR;
+					else if(bit==-2) return EOI_MARKER;	//EOI marker
+					else if(bit<-2) return RESTART_MARKER+bit;	//RESTART marker
+					y<<=1;
+					y+=bit;
+				}
+				if(typeof(bs)==='object') bs.str+="<font color='black'>"+str+"</font>";
+				return decodeInt(y,Htable[i][2]);
+			}
+		}
+	}
+	addr0=Math.floor(startAddr/8);
+	Rptr=addr0;
+	Rbitcount=addr0*8;
+	getbit(0);	//reset bitcount
+	for(;Rbitcount<startAddr;getbit(1));	//back to start	
+	return HTAB_ERR;
+}
+
+const EOB=0x1000000;
+const ZRL=0x2000000;
+//decode AC value from buffer f using Huffman table Htable
+//return value:
+//EOF_ERR 			-> end of file
+//EOI_MARKER 		-> EOI marker
+//RESTART_MARKER-(0xD0..0xD7) -> restart marker
+//HTAB_ERR 			-> can't find a coefficient; file bit index back to starting point
+//EOB 				-> end of block
+//ZRL 				-> zero run length = 16 zeros
+//AC coefficient	-> format: 0xZZXXXX
+//		XXXX = coefficient
+//		ZZ = number of zeros preceding the coefficient
+function decodeHvalAC(Htable,bs=0){
+	startAddr=Rbitcount;
+	var bit,h,i,j,x,y,nz,str="";
+	x=0;
+	for(n=0;n<17;){	//max 16 bit
+		bit=getbit(1);
+		if(typeof(bs)==='object') str+=bit.toString();
+		if(bit==-1) return EOF_ERR;
+		else if(bit==-2) return EOI_MARKER;	//EOI marker
+		else if(bit<-2) return RESTART_MARKER+bit;	//RESTART marker
+		x=(x<<1)+bit;
+		h=0;
+		n++;
+		for(i=0;h!=-1&&Htable[i][0]<=n;i++){
+			h=Htable[i][1];
+			if(n==Htable[i][0]&&x==h){
+				if(Htable[i][2]==0){
+					if(typeof(bs)==='object') bs.str+="<font color='blue'>"+str+"</font>";
+					return EOB;
+				}					
+				if(Htable[i][2]==0xF0){
+					if(typeof(bs)==='object') bs.str+="<font color='violet'>"+str+"</font>";
+					return ZRL; //Zero run length = 16 zeros
+				}
+				if(typeof(bs)==='object') bs.str+="<font color='green'>"+str+"</font>";
+				str="";
+				//code format: [# zeros][# bit]
+				y=0;
+				nz=Htable[i][2]>>4;
+				for(j=Htable[i][2]&0xF;j;j--){
+					bit=getbit(1);
+ 					if(typeof(bs)==='object') str+=bit.toString();
+					if(bit==-1) return EOF_ERR;
+					else if(bit==-2) return EOI_MARKER;	//EOI marker
+					else if(bit<-2) return RESTART_MARKER+bit;	//RESTART marker
+					y<<=1;
+					y+=bit;
+				}
+				y=decodeInt(y,Htable[i][2]&0xF);
+				if(typeof(bs)==='object') bs.str+="<font color='black'>"+str+"</font>";
+				return (nz<<16)+(y&0xFFFF);	//0xZZXXXX
+			}
+		}
+	}
+	var addr0=Math.floor(startAddr/8);
+	Rptr=addr0;
+	Rbitcount=addr0*8;
+	getbit(0);	//reset bitcount
+	for(;Rbitcount<startAddr;getbit(1));	//back to start	
+	return HTAB_ERR;
+}
+
+const Y_BLOCK=0;
+const C_BLOCK=1;
+const DECODE_UNKNOWN=-2;
+const DECODE_EOF=-1;
+const DECODE_ERR=0;
+const DECODE_OK=1;
+const DECODE_EOI=2;
+const DECODE_RESTART=3;
+const DECODE_PARTIAL_RESTART=4;
+//decode Y or C block (DC+AC)
+//save coefficients in MCUarray[mcucount].blocks[iblock]
+//v=0 no messages
+//v=1 out on console
+//type=0 Y
+//type=1 C
+//return value:
+// DECODE_UNKNOWN	-> unknown code
+// DECODE_EOF 		-> end of data
+// DECODE_ERR 		-> decode error
+// DECODE_OK 		-> decode ok
+// DECODE_EOI 		-> EOI marker
+// DECODE_RESTART 	->RESTART marker (+ restart marker number <<8)
+// DECODE_PARTIAL_RESTART 	->partial decoding + RESTART marker (+ restart marker number <<8)
+function decodeBlock(type,v=0,bs=0){	
+	var nz;
+	var blockAddr=Rbitcount,endAddr;
+	var dccoeff,rst;
+	if(type==0)	dccoeff=decodeHvalDC(YDC,bs);
+	else dccoeff=decodeHvalDC(CDC,bs);
+	if(dccoeff<-10000||dccoeff>10000){
+		if(dccoeff==HTAB_ERR){
+			dccoeff=0;
+			if(v==1) console.log("Huffman error (DC)\n");
+			MCUarray[mcucount].blocks[iblock].errors+="Huffman error (DC)";
+			return DECODE_ERR;
+		}
+		if(dccoeff==EOI_MARKER){
+			if(v==1) console.log("EOI marker\n");
+			MCUarray[mcucount].blocks[iblock].errors+="EOI marker";
+			return DECODE_EOI;
+		}
+		if(dccoeff==EOF_ERR){
+			if(v==1) console.log("End of data\n");
+			return DECODE_EOF;
+		}
+		if(dccoeff<RESTART_MARKER){
+			rst=-dccoeff+RESTART_MARKER-0xD0;
+			if(v==1) console.log("RESTART marker %d\n",rst);
+			//MCUarray[mcucount].blocks[iblock].errors+="RESTART marker "+rst;
+			return DECODE_RESTART+(rst<<8);
+		}
+		else{ 
+			return DECODE_UNKNOWN;
+		}
+	}
+	MCUarray[mcucount].blocks[iblock].coeff[0]=dccoeff;
+	var ACAddr=Rbitcount;
+	var	coeff,ncoeff=1;
+	var coeffstr="";
+	if(v==1&&type==0) coeffstr+="0x"+(blockAddr>>3).toString(16)+"."+(blockAddr&7)+" Y="+dccoeff;
+	if(v==1&&type==1) coeffstr+="0x"+(blockAddr>>3).toString(16)+"."+(blockAddr&7)+" C="+dccoeff;
+	for(coeff=-1;coeff!=EOB&&ncoeff<64;){
+		if(type==0)	coeff=decodeHvalAC(YAC,bs);
+		else coeff=decodeHvalAC(CAC,bs);
+		if(coeff<0||coeff>0x2000000){
+			if(coeff==HTAB_ERR){
+				//getbit(1);	//advance 1 bit	*************should be at higher level -> do not produce MCU
+				if(v==1) console.log("Huffman error (AC)\n");
+				MCUarray[mcucount].blocks[iblock].errors+="Huffman error (AC)";
+				return DECODE_ERR;
+			}
+			if(coeff==EOI_MARKER){
+				if(v==1) console.log("EOI marker\n");
+				MCUarray[mcucount].blocks[iblock].errors+="EOI marker";
+				return DECODE_EOI;
+			}
+			if(coeff==EOF_ERR){
+				if(v==1) console.log("End of data\n");
+				return DECODE_EOF;
+			}
+			if(coeff<RESTART_MARKER){
+				rst=-coeff+RESTART_MARKER-0xD0;
+				if(v==1) console.log("RESTART marker %d\n",rst);
+				//MCUarray[mcucount].blocks[iblock].errors+="RESTART marker "+rst;
+				return DECODE_PARTIAL_RESTART+(rst<<8);
+			}
+			else{ 
+				MCUarray[mcucount].blocks[iblock].errors+="Unknown code";
+				return DECODE_UNKNOWN;
+			}
+		}
+		if(coeff==EOB){
+			if(v==1) coeffstr+=" EOB";
+		}
+		else if(coeff==ZRL){
+			if(v==1) coeffstr+=" 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
+			for(i=0;i<16;i++) MCUarray[mcucount].blocks[iblock].coeff.push(0);
+			ncoeff+=16;
+		}
+		else{
+			nz=(coeff&0xFF0000)>>16;
+			ncoeff+=nz+1;
+			for(;nz;nz--){
+				if(v==1) coeffstr+=" 0";
+				MCUarray[mcucount].blocks[iblock].coeff.push(0);
+			}
+			coeff&=0xFFFF;
+			if(coeff&0x1000) coeff|=0xFFFF0000;	//sign extension
+			if(v==1) coeffstr+=" "+coeff;
+			MCUarray[mcucount].blocks[iblock].coeff.push(coeff);
+		}
+	}
+	endAddr=Rbitcount;
+	if(v==1){
+		coeffstr+=" ("+(endAddr-blockAddr)+" bit)";
+		if(ncoeff>64) coeffstr+="Too many AC coefficients! ("+ncoeff+")";
+		console.log(coeffstr);
+	}
+	if(MCUarray[mcucount].blocks[iblock].coeff.length>64){
+		MCUarray[mcucount].blocks[iblock].errors+="Too many AC coefficients! ("+
+			MCUarray[mcucount].blocks[iblock].coeff.length+")";
+		MCUarray[mcucount].blocks[iblock].coeff.length=64;
+	}
+	return DECODE_OK;
+}
+
+const ENC_ERR=-1;
+//encode DC value using Huffman table Htable
+//return value:
+//encode x (DC value, max 11 bit) using Huffman table Htable
+//result: {code: coded value, n: total number of bits}
+//ENC_ERR if x requires more than 11 bits or code not found in table
+function encodeHvalDC(Htable,x){
+	var val=x>0?x:-x;
+	var n,i;
+	for(n=0;val;val>>=1) n++;	//# of bits required
+	if(n>11) return ENC_ERR;
+	for(i=0;i<Htable.length&&Htable[i][2]!=n;i++);	//find prefix that encodes n bits
+	if(i>=Htable.length) return ENC_ERR;
+	if(x<0) x+=(1<<n)-1;			//adjust for negative numbers
+	val=(Htable[i][1]<<n)+(x&((1<<n)-1)); //prefix + value
+	return {code:val,n:Htable[i][0]+n};
+}
+
+//encode AC value using Huffman table Htable
+//R=zero run length
+//x=coefficient
+//result: {code: coded value, n: total number of bits}
+//ENC_ERR if x requires more than 10 bits or code not found in table
+function encodeHvalAC(Htable,R,x){
+	var val=x>0?x:-x;
+	var n,i;
+	for(n=0;val;val>>=1) n++;	//# of bits required
+	if(n>10||R>15) return ENC_ERR;
+	var C=R*16+n;	//final code to search
+	for(i=0;i<Htable.length&&Htable[i][2]!=C;i++);	//find prefix that encodes C
+	if(i>=Htable.length) return ENC_ERR;
+	if(x<0) x+=(1<<n)-1;			//adjust for negative numbers
+	val=(Htable[i][1]<<n)+(x&((1<<n)-1)); //prefix + value
+	return {code:val,n:Htable[i][0]+n};
+}
+
+
+//Standard IDCT
+function idct2dB(mat){
+	const cos = Math.cos, PI = Math.PI, isqrt2 = 1 / Math.sqrt(2);
+	mat2=new Array();
+	for(x=0;x<8;x++){
+		for(y=0;y<8;y++){
+			s=0;
+			for(u=0;u<8;u++){
+				for(v=0;v<8;v++){
+					Cu=u==0?isqrt2:1;
+					Cv=v==0?isqrt2:1;
+					s+=Cu*Cv*cos((2*x+1)*u*PI/16)*cos((2*y+1)*v*PI/16)*mat[u*8+v];
+				}
+			}
+			mat2[x*8+y]=s/4;
+		}
+	}
+	return mat2;
+}
+
+//Quick IDCT using pre-computed tables
+//Each DCT coefficient corresponds to a table of 8x8=64 pixel values
+function idct2dC(mat){
+	mat2=new Array(64);
+	mat2.fill(0);
+	for(u=0;u<64;u++){
+		if(mat[u]!=0){
+			for(x=0;x<64;x++){
+				mat2[x]+=mat[u]*idctMat[u][x];
+			}
+		}
+	}
+	return mat2;
+}
+
+//Create IDCT tables (64 arrays of 8x8=64 pixels)
+//containing computed Cosine values + scaling 
+const cos = Math.cos, PI = Math.PI, isqrt2 = 1 / Math.sqrt(2);
+idctMat=new Array();
+for(u=0;u<8;u++){
+	for(v=0;v<8;v++){
+		Cu=u==0?isqrt2:1;
+		Cv=v==0?isqrt2:1;
+		var cc=u*8+v;
+		idctMat[cc]=new Array();
+		for(x=0;x<8;x++){
+			for(y=0;y<8;y++){
+				var p=x*8+y;
+				idctMat[cc][p]=Cu*Cv*cos((2*x+1)*u*PI/16)*cos((2*y+1)*v*PI/16)/4;
+			}
+		}
+	}
+}
+
+//coefficient quantization functions
+
+function quantizeY(color8x8) {
+    return color8x8.map((c, i) => Math.round(c / qmatY[i]));
+}
+function dequantizeY(quant8x8) {
+    return quant8x8.map((q, i) => q * qmatY[i]);
+}
+function dequantizeC(quant8x8) {
+    return quant8x8.map((q, i) => q * qmatC[i]);
+}
+
+//convert coefficient ordering to linear form
+function zigzag2square(zigzag, w = 8) {
+    console.assert(zigzag.length === w * w);
+    const square = Array(zigzag.length);
+    const max = 2 * (w - 1);
+    let i = 0;
+    for (let sum = 0; sum <= max; sum++) {
+        const start = sum < w ? 0 : sum - w + 1, end = sum < w ? sum : w - 1;
+        if (sum % 2 === 0) {
+            for (let x = start; x <= end; x++) {
+                const y = sum - x;
+                square[y * w + x] = zigzag[i++];
+            }
+        } else {
+            for (let x = end; x >= start; x--) {
+                const y = sum - x;
+                square[y * w + x] = zigzag[i++];
+            }
+        }
+    }
+    return square;
+}
+
+//Color space conversion
+function YCrCb2RGB(Y,C2,C1){
+	R=Y+1.402*(C1-128);
+	G=Y-0.344136*(C2-128)-0.714136*(C1-128); 
+	B=Y+1.772*(C2-128);
+	return {R,G,B}
+}
+
+//print matrix in rows of 8
+function printmat(m,n=""){
+	var i,r=0,str=n+"[\n";
+	for(i=0;i<m.length;i++){
+		str+=" ";
+		str+=m[i]%1?m[i].toFixed(2):m[i];
+		r++;
+		if(r==8){
+			r=0;
+			console.log(str);
+			str="";
+		}
+	}
+	if(r>0) console.log(str);
+	console.log("]");
+}
+
+//arrays are equal?
+function equal(a,b){
+	if(a.length!=b.length) return false;
+	var i=a.length;
+	while(i--){
+		if(a[i]!==b[i]) return false;
+	}
+	return true;
+}
+
+//Stanfard JPEG data
+
+markers=[ 	
+	[0xC0,1,"SOF0","Start of Frame 0"],
+	[0xC1,1,"SOF1","Start of Frame 1"],
+	[0xC2,1,"SOF2","Start of Frame 2"],
+	[0xC3,1,"SOF3","Start of Frame 3"],
+	[0xC4,1,"DHT","Define Huffman Table"],
+	[0xC5,1,"SOF5","Start of Frame 5"],
+	[0xC6,1,"SOF6","Start of Frame 6"],
+	[0xC7,1,"SOF7","Start of Frame 7"],
+	[0xC8,1,"JPG","JPEG Extensions"],
+	[0xC9,1,"SOF9","Start of Frame 9"],
+	[0xCA,1,"SOF10","Start of Frame 10"],
+	[0xCB,1,"SOF11","Start of Frame 11"],
+	[0xCC,1,"DAC","Define Arithmetic Coding"],
+	[0xCD,1,"SOF13","Start of Frame 13"],
+	[0xCE,1,"SOF14","Start of Frame 14"],
+	[0xCF,1,"SOF15","Start of Frame 15"],
+	[0xD0,0,"RST0","Restart Marker 0"],
+	[0xD1,0,"RST1","Restart Marker 1"],
+	[0xD2,0,"RST2","Restart Marker 2"],
+	[0xD3,0,"RST3","Restart Marker 3"],
+	[0xD4,0,"RST4","Restart Marker 4"],
+	[0xD5,0,"RST5","Restart Marker 5"],
+	[0xD6,0,"RST6","Restart Marker 6"],
+	[0xD7,0,"RST7","Restart Marker 7"],
+	[0xD8,0,"SOI","Start of Image"],
+	[0xD9,0,"EOI","End of Image"],
+	[0xDA,1,"SOS","Start of Scan"],
+	[0xDB,1,"DQT","Define Quantization Table"],
+	[0xDC,1,"DNL","Define Number of Lines"],
+	[0xDD,1,"DRI","Define Restart Interval"],
+	[0xDE,1,"DHP","Define Hierarchical Progression"],
+	[0xDF,1,"EXP","Expand Reference Component"],
+	[0xE0,1,"APP0","Application Segment 0"],
+	[0xE1,1,"APP1","Application Segment 1"],
+	[0xE2,1,"APP2","Application Segment 2"],
+	[0xE3,1,"APP3","Application Segment 3"],
+	[0xE4,1,"APP4","Application Segment 4"],
+	[0xE5,1,"APP5","Application Segment 5"],
+	[0xE6,1,"APP6","Application Segment 6"],
+	[0xE7,1,"APP7","Application Segment 7"],
+	[0xE8,1,"APP8","Application Segment 8"],
+	[0xE9,1,"APP9","Application Segment 9"],
+	[0xEA,1,"APP10","Application Segment 10"],
+	[0xEB,1,"APP11","Application Segment 11"],
+	[0xEC,1,"APP12","Application Segment 12"],
+	[0xED,1,"APP13","Application Segment 13"],
+	[0xEE,1,"APP14","Application Segment 14"],
+	[0xEF,1,"APP15","Application Segment 15"],
+	[0xF0,1,"JPG0","JPEG Extension 0"],
+	[0xF1,1,"JPG1","JPEG Extension 1"],
+	[0xF2,1,"JPG2","JPEG Extension 2"],
+	[0xF3,1,"JPG3","JPEG Extension 3"],
+	[0xF4,1,"JPG4","JPEG Extension 4"],
+	[0xF5,1,"JPG5","JPEG Extension 5"],
+	[0xF6,1,"JPG6","JPEG Extension 6"],
+	[0xF7,1,"JPG7","JPEG Extension 7"],
+	[0xF8,1,"JPG8","JPEG Extension 8"],
+	[0xF9,1,"JPG9","JPEG Extension 9"],
+	[0xFA,1,"JPG10","JPEG Extension 10"],
+	[0xFB,1,"JPG11","JPEG Extension 11"],
+	[0xFC,1,"JPG12","JPEG Extension 12"],
+	[0xFD,1,"JPG13","JPEG Extension 13"],
+	[0xFE,1,"COM","Comment"],
+]; 
+
+// quantization <=> dequantization
+qmatY = [
+	16,11,10,16,24,40,51,61,
+	12,12,14,19,26,58,60,55,
+	14,13,16,24,40,57,69,56,
+	14,17,22,29,51,87,80,62,
+	18,22,37,56,68,109,103,77,
+	24,35,55,64,81,104,113,92,
+	49,64,78,87,103,121,120,101,
+	72,92,95,98,112,100,103,99];
+
+qmatC=[
+	17,18,24,47,99,99,99,99,
+	18,21,26,66,99,99,99,99,
+	24,26,56,99,99,99,99,99,
+	47,66,99,99,99,99,99,99,
+	99,99,99,99,99,99,99,99,
+	99,99,99,99,99,99,99,99,
+	99,99,99,99,99,99,99,99,
+	99,99,99,99,99,99,99,99];
+
+
+//Huffman tables
+//{prefix length, prefix, code = length of number that follows}
+YDC=[
+[2,0b00,0],
+[3,0b010,1],
+[3,0b011,2],      
+[3,0b100,3],
+[3,0b101,4],
+[3,0b110,5],
+[4,0b1110,6],
+[5,0b11110,7],
+[6,0b111110,8],
+[7,0b1111110,9],
+[8,0b11111110,10],
+[9,0b111111110,11],
+[-1,-1,-1],
+];
+
+CDC=[
+[2,0b00,0],
+[2,0b01,1],
+[2,0b10,2],
+[3,0b110,3],
+[4,0b1110,4],
+[5,0b11110,5],
+[6,0b111110,6],
+[7,0b1111110,7],
+[8,0b11111110,8],
+[9,0b111111110,9],
+[10,0b1111111110,10],
+[11,0b11111111110,11],
+[-1,-1,-1],
+];
+
+//[prefix length, prefix, code]
+//code: [ZRL][#bit] ZRL=[0..F] #bit=[1..10]
+YAC=[
+[2,0b00,0x01],
+[2,0b01,0x02],
+[3,0b100,0x03],
+//Codes of length 04 bits:
+[4,0b1010,0x00],			//(EOB)
+[4,0b1011,0x04],
+[4,0b1100,0x11],
+//Codes of length 05 bits:
+[5,0b11010,0x05],
+[5,0b11011,0x12],
+[5,0b11100,0x21],
+//Codes of length 06 bits:
+[6,0b111010,0x31],
+[6,0b111011,0x41],
+//Codes of length 07 bits:
+[7,0b1111000,0x06],
+[7,0b1111001,0x13],
+[7,0b1111010,0x51],
+[7,0b1111011,0x61],
+//Codes of length 08 bits:
+[8,0b11111000,0x07],
+[8,0b11111001,0x22],
+[8,0b11111010,0x71],
+//Codes of length 09 bits:
+[9,0b111110110,0x14],
+[9,0b111110111,0x32],
+[9,0b111111000,0x81],
+[9,0b111111001,0x91],
+[9,0b111111010,0xA1],
+//Codes of length 10 bits:
+[10,0b1111110110,0x08],
+[10,0b1111110111,0x23],
+[10,0b1111111000,0x42],
+[10,0b1111111001,0xB1],
+[10,0b1111111010,0xC1],
+//Codes of length 11 bits:
+[11,0b11111110110,0x15],
+[11,0b11111110111,0x52],
+[11,0b11111111000,0xD1],
+[11,0b11111111001,0xF0],	//(ZRL)
+//Codes of length 12 bits:
+[12,0b111111110100,0x24],
+[12,0b111111110101,0x33],
+[12,0b111111110110,0x62],
+[12,0b111111110111,0x72],
+//Codes of length 15 bits:
+[15,0b111111111000000,0x82],
+//Codes of length 16 bits:
+[16,0b1111111110000010,0x09],
+[16,0b1111111110000011,0x0A],
+[16,0b1111111110000100,0x16],
+[16,0b1111111110000101,0x17],
+[16,0b1111111110000110,0x18],
+[16,0b1111111110000111,0x19],
+[16,0b1111111110001000,0x1A],
+[16,0b1111111110001001,0x25],
+[16,0b1111111110001010,0x26],
+[16,0b1111111110001011,0x27],
+[16,0b1111111110001100,0x28],
+[16,0b1111111110001101,0x29],
+[16,0b1111111110001110,0x2A],
+[16,0b1111111110001111,0x34],
+[16,0b1111111110010000,0x35],
+[16,0b1111111110010001,0x36],
+[16,0b1111111110010010,0x37],
+[16,0b1111111110010011,0x38],
+[16,0b1111111110010100,0x39],
+[16,0b1111111110010101,0x3A],
+[16,0b1111111110010110,0x43],
+[16,0b1111111110010111,0x44],
+[16,0b1111111110011000,0x45],
+[16,0b1111111110011001,0x46],
+[16,0b1111111110011010,0x47],
+[16,0b1111111110011011,0x48],
+[16,0b1111111110011100,0x49],
+[16,0b1111111110011101,0x4A],
+[16,0b1111111110011110,0x53],
+[16,0b1111111110011111,0x54],
+[16,0b1111111110100000,0x55],
+[16,0b1111111110100001,0x56],
+[16,0b1111111110100010,0x57],
+[16,0b1111111110100011,0x58],
+[16,0b1111111110100100,0x59],
+[16,0b1111111110100101,0x5A],
+[16,0b1111111110100110,0x63],
+[16,0b1111111110100111,0x64],
+[16,0b1111111110101000,0x65],
+[16,0b1111111110101001,0x66],
+[16,0b1111111110101010,0x67],
+[16,0b1111111110101011,0x68],
+[16,0b1111111110101100,0x69],
+[16,0b1111111110101101,0x6A],
+[16,0b1111111110101110,0x73],
+[16,0b1111111110101111,0x74],
+[16,0b1111111110110000,0x75],
+[16,0b1111111110110001,0x76],
+[16,0b1111111110110010,0x77],
+[16,0b1111111110110011,0x78],
+[16,0b1111111110110100,0x79],
+[16,0b1111111110110101,0x7A],
+[16,0b1111111110110110,0x83],
+[16,0b1111111110110111,0x84],
+[16,0b1111111110111000,0x85],
+[16,0b1111111110111001,0x86],
+[16,0b1111111110111010,0x87],
+[16,0b1111111110111011,0x88],
+[16,0b1111111110111100,0x89],
+[16,0b1111111110111101,0x8A],
+[16,0b1111111110111110,0x92],
+[16,0b1111111110111111,0x93],
+[16,0b1111111111000000,0x94],
+[16,0b1111111111000001,0x95],
+[16,0b1111111111000010,0x96],
+[16,0b1111111111000011,0x97],
+[16,0b1111111111000100,0x98],
+[16,0b1111111111000101,0x99],
+[16,0b1111111111000110,0x9A],
+[16,0b1111111111000111,0xA2],
+[16,0b1111111111001000,0xA3],
+[16,0b1111111111001001,0xA4],
+[16,0b1111111111001010,0xA5],
+[16,0b1111111111001011,0xA6],
+[16,0b1111111111001100,0xA7],
+[16,0b1111111111001101,0xA8],
+[16,0b1111111111001110,0xA9],
+[16,0b1111111111001111,0xAA],
+[16,0b1111111111010000,0xB2],
+[16,0b1111111111010001,0xB3],
+[16,0b1111111111010010,0xB4],
+[16,0b1111111111010011,0xB5],
+[16,0b1111111111010100,0xB6],
+[16,0b1111111111010101,0xB7],
+[16,0b1111111111010110,0xB8],
+[16,0b1111111111010111,0xB9],
+[16,0b1111111111011000,0xBA],
+[16,0b1111111111011001,0xC2],
+[16,0b1111111111011010,0xC3],
+[16,0b1111111111011011,0xC4],
+[16,0b1111111111011100,0xC5],
+[16,0b1111111111011101,0xC6],
+[16,0b1111111111011110,0xC7],
+[16,0b1111111111011111,0xC8],
+[16,0b1111111111100000,0xC9],
+[16,0b1111111111100001,0xCA],
+[16,0b1111111111100010,0xD2],
+[16,0b1111111111100011,0xD3],
+[16,0b1111111111100100,0xD4],
+[16,0b1111111111100101,0xD5],
+[16,0b1111111111100110,0xD6],
+[16,0b1111111111100111,0xD7],
+[16,0b1111111111101000,0xD8],
+[16,0b1111111111101001,0xD9],
+[16,0b1111111111101010,0xDA],
+[16,0b1111111111101011,0xE1],
+[16,0b1111111111101100,0xE2],
+[16,0b1111111111101101,0xE3],
+[16,0b1111111111101110,0xE4],
+[16,0b1111111111101111,0xE5],
+[16,0b1111111111110000,0xE6],
+[16,0b1111111111110001,0xE7],
+[16,0b1111111111110010,0xE8],
+[16,0b1111111111110011,0xE9],
+[16,0b1111111111110100,0xEA],
+[16,0b1111111111110101,0xF1],
+[16,0b1111111111110110,0xF2],
+[16,0b1111111111110111,0xF3],
+[16,0b1111111111111000,0xF4],
+[16,0b1111111111111001,0xF5],
+[16,0b1111111111111010,0xF6],
+[16,0b1111111111111011,0xF7],
+[16,0b1111111111111100,0xF8],
+[16,0b1111111111111101,0xF9],
+[16,0b1111111111111110,0xFA],
+[-1,-1,-1],
+];
+
+CAC=[
+//Codes of length 02 bits:
+[2,0b00,0x00],			//EOB
+[2,0b01,0x01],
+//Codes of length 03 bits:
+[3,0b100,0x02],
+//Codes of length 04 bits:
+[4,0b1010,0x03],
+[4,0b1011,0x11],
+//Codes of length 05 bits:
+[5,0b11000,0x04],
+[5,0b11001,0x05],
+[5,0b11010,0x21],
+[5,0b11011,0x31],
+//Codes of length 06 bits:
+[6,0b111000,0x06],
+[6,0b111001,0x12],
+[6,0b111010,0x41],
+[6,0b111011,0x51],
+//Codes of length 07 bits:
+[7,0b1111000,0x07],
+[7,0b1111001,0x61],
+[7,0b1111010,0x71],
+//Codes of length 08 bits:
+[8,0b11110110,0x13],
+[8,0b11110111,0x22],
+[8,0b11111000,0x32],
+[8,0b11111001,0x81],
+//Codes of length 09 bits:
+[9,0b111110100,0x08],
+[9,0b111110101,0x14],
+[9,0b111110110,0x42],
+[9,0b111110111,0x91],
+[9,0b111111000,0xA1],
+[9,0b111111001,0xB1],
+[9,0b111111010,0xC1],
+//Codes of length 10 bits:
+[10,0b1111110110,0x09],
+[10,0b1111110111,0x23],
+[10,0b1111111000,0x33],
+[10,0b1111111001,0x52],
+[10,0b1111111010,0xF0],		//ZRL
+//Codes of length 11 bits:
+[11,0b11111110110,0x15],
+[11,0b11111110111,0x62],
+[11,0b11111111000,0x72],
+[11,0b11111111001,0xD1],
+//Codes of length 12 bits:
+[12,0b111111110100,0x0A],
+[12,0b111111110101,0x16],
+[12,0b111111110110,0x24],
+[12,0b111111110111,0x34],
+//Codes of length 14 bits:
+[14,0b11111111100000,0xE1],
+//Codes of length 15 bits:
+[15,0b111111111000010,0x25],
+[15,0b111111111000011,0xF1],
+//Codes of length 16 bits:
+[16,0b1111111110001000,0x17],
+[16,0b1111111110001001,0x18],
+[16,0b1111111110001010,0x19],
+[16,0b1111111110001011,0x1A],
+[16,0b1111111110001100,0x26],
+[16,0b1111111110001101,0x27],
+[16,0b1111111110001110,0x28],
+[16,0b1111111110001111,0x29],
+[16,0b1111111110010000,0x2A],
+[16,0b1111111110010001,0x35],
+[16,0b1111111110010010,0x36],
+[16,0b1111111110010011,0x37],
+[16,0b1111111110010100,0x38],
+[16,0b1111111110010101,0x39],
+[16,0b1111111110010110,0x3A],
+[16,0b1111111110010111,0x43],
+[16,0b1111111110011000,0x44],
+[16,0b1111111110011001,0x45],
+[16,0b1111111110011010,0x46],
+[16,0b1111111110011011,0x47],
+[16,0b1111111110011100,0x48],
+[16,0b1111111110011101,0x49],
+[16,0b1111111110011110,0x4A],
+[16,0b1111111110011111,0x53],
+[16,0b1111111110100000,0x54],
+[16,0b1111111110100001,0x55],
+[16,0b1111111110100010,0x56],
+[16,0b1111111110100011,0x57],
+[16,0b1111111110100100,0x58],
+[16,0b1111111110100101,0x59],
+[16,0b1111111110100110,0x5A],
+[16,0b1111111110100111,0x63],
+[16,0b1111111110101000,0x64],
+[16,0b1111111110101001,0x65],
+[16,0b1111111110101010,0x66],
+[16,0b1111111110101011,0x67],
+[16,0b1111111110101100,0x68],
+[16,0b1111111110101101,0x69],
+[16,0b1111111110101110,0x6A],
+[16,0b1111111110101111,0x73],
+[16,0b1111111110110000,0x74],
+[16,0b1111111110110001,0x75],
+[16,0b1111111110110010,0x76],
+[16,0b1111111110110011,0x77],
+[16,0b1111111110110100,0x78],
+[16,0b1111111110110101,0x79],
+[16,0b1111111110110110,0x7A],
+[16,0b1111111110110111,0x82],
+[16,0b1111111110111000,0x83],
+[16,0b1111111110111001,0x84],
+[16,0b1111111110111010,0x85],
+[16,0b1111111110111011,0x86],
+[16,0b1111111110111100,0x87],
+[16,0b1111111110111101,0x88],
+[16,0b1111111110111110,0x89],
+[16,0b1111111110111111,0x8A],
+[16,0b1111111111000000,0x92],
+[16,0b1111111111000001,0x93],
+[16,0b1111111111000010,0x94],
+[16,0b1111111111000011,0x95],
+[16,0b1111111111000100,0x96],
+[16,0b1111111111000101,0x97],
+[16,0b1111111111000110,0x98],
+[16,0b1111111111000111,0x99],
+[16,0b1111111111001000,0x9A],
+[16,0b1111111111001001,0xA2],
+[16,0b1111111111001010,0xA3],
+[16,0b1111111111001011,0xA4],
+[16,0b1111111111001100,0xA5],
+[16,0b1111111111001101,0xA6],
+[16,0b1111111111001110,0xA7],
+[16,0b1111111111001111,0xA8],
+[16,0b1111111111010000,0xA9],
+[16,0b1111111111010001,0xAA],
+[16,0b1111111111010010,0xB2],
+[16,0b1111111111010011,0xB3],
+[16,0b1111111111010100,0xB4],
+[16,0b1111111111010101,0xB5],
+[16,0b1111111111010110,0xB6],
+[16,0b1111111111010111,0xB7],
+[16,0b1111111111011000,0xB8],
+[16,0b1111111111011001,0xB9],
+[16,0b1111111111011010,0xBA],
+[16,0b1111111111011011,0xC2],
+[16,0b1111111111011100,0xC3],
+[16,0b1111111111011101,0xC4],
+[16,0b1111111111011110,0xC5],
+[16,0b1111111111011111,0xC6],
+[16,0b1111111111100000,0xC7],
+[16,0b1111111111100001,0xC8],
+[16,0b1111111111100010,0xC9],
+[16,0b1111111111100011,0xCA],
+[16,0b1111111111100100,0xD2],
+[16,0b1111111111100101,0xD3],
+[16,0b1111111111100110,0xD4],
+[16,0b1111111111100111,0xD5],
+[16,0b1111111111101000,0xD6],
+[16,0b1111111111101001,0xD7],
+[16,0b1111111111101010,0xD8],
+[16,0b1111111111101011,0xD9],
+[16,0b1111111111101100,0xDA],
+[16,0b1111111111101101,0xE2],
+[16,0b1111111111101110,0xE3],
+[16,0b1111111111101111,0xE4],
+[16,0b1111111111110000,0xE5],
+[16,0b1111111111110001,0xE6],
+[16,0b1111111111110010,0xE7],
+[16,0b1111111111110011,0xE8],
+[16,0b1111111111110100,0xE9],
+[16,0b1111111111110101,0xEA],
+[16,0b1111111111110110,0xF2],
+[16,0b1111111111110111,0xF3],
+[16,0b1111111111111000,0xF4],
+[16,0b1111111111111001,0xF5],
+[16,0b1111111111111010,0xF6],
+[16,0b1111111111111011,0xF7],
+[16,0b1111111111111100,0xF8],
+[16,0b1111111111111101,0xF9],
+[16,0b1111111111111110,0xFA],
+[-1,-1,-1],
+];
+
+//standard set of Huffman tables
+HT0=[
+	0x00,0x00,0x01,0x05,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00,
+	0x00,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x10,0x00,0x02,
+	0x01,0x03,0x03,0x02,0x04,0x03,0x05,0x05,0x04,0x04,0x00,0x00,0x01,0x7D,0x01,0x02,
+	0x03,0x00,0x04,0x11,0x05,0x12,0x21,0x31,0x41,0x06,0x13,0x51,0x61,0x07,0x22,0x71,
+	0x14,0x32,0x81,0x91,0xA1,0x08,0x23,0x42,0xB1,0xC1,0x15,0x52,0xD1,0xF0,0x24,0x33,
+	0x62,0x72,0x82,0x09,0x0A,0x16,0x17,0x18,0x19,0x1A,0x25,0x26,0x27,0x28,0x29,0x2A,
+	0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4A,0x53,
+	0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6A,0x73,
+	0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x83,0x84,0x85,0x86,0x87,0x88,0x89,0x8A,0x92,
+	0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9A,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,0xA8,0xA9,
+	0xAA,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,0xC2,0xC3,0xC4,0xC5,0xC6,0xC7,
+	0xC8,0xC9,0xCA,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD9,0xDA,0xE1,0xE2,0xE3,0xE4,
+	0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xF1,0xF2,0xF3,0xF4,0xF5,0xF6,0xF7,0xF8,0xF9,0xFA,
+	0x01,0x00,0x03,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,
+	0x00,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x11,0x00,0x02,
+	0x01,0x02,0x04,0x04,0x03,0x04,0x07,0x05,0x04,0x04,0x00,0x01,0x02,0x77,0x00,0x01,
+	0x02,0x03,0x11,0x04,0x05,0x21,0x31,0x06,0x12,0x41,0x51,0x07,0x61,0x71,0x13,0x22,
+	0x32,0x81,0x08,0x14,0x42,0x91,0xA1,0xB1,0xC1,0x09,0x23,0x33,0x52,0xF0,0x15,0x62,
+	0x72,0xD1,0x0A,0x16,0x24,0x34,0xE1,0x25,0xF1,0x17,0x18,0x19,0x1A,0x26,0x27,0x28,
+	0x29,0x2A,0x35,0x36,0x37,0x38,0x39,0x3A,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4A,
+	0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6A,
+	0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x82,0x83,0x84,0x85,0x86,0x87,0x88,0x89,
+	0x8A,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9A,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,
+	0xA8,0xA9,0xAA,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,0xC2,0xC3,0xC4,0xC5,
+	0xC6,0xC7,0xC8,0xC9,0xCA,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD9,0xDA,0xE2,0xE3,
+	0xE4,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xF2,0xF3,0xF4,0xF5,0xF6,0xF7,0xF8,0xF9,0xFA
+];
+
+//standard YDC Huffman table
+HT1=[
+	0x00,0x00,0x01,0x05,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00,
+	0x00,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B
+];
+
+//standard YAC Huffman table
+HT2=[
+	0x10,0x00,0x02,0x01,0x03,0x03,0x02,0x04,0x03,0x05,0x05,0x04,0x04,0x00,0x00,0x01,
+	0x7D,0x01,0x02,0x03,0x00,0x04,0x11,0x05,0x12,0x21,0x31,0x41,0x06,0x13,0x51,0x61,
+	0x07,0x22,0x71,0x14,0x32,0x81,0x91,0xA1,0x08,0x23,0x42,0xB1,0xC1,0x15,0x52,0xD1,
+	0xF0,0x24,0x33,0x62,0x72,0x82,0x09,0x0A,0x16,0x17,0x18,0x19,0x1A,0x25,0x26,0x27,
+	0x28,0x29,0x2A,0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x43,0x44,0x45,0x46,0x47,0x48,
+	0x49,0x4A,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0x63,0x64,0x65,0x66,0x67,0x68,
+	0x69,0x6A,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x83,0x84,0x85,0x86,0x87,0x88,
+	0x89,0x8A,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9A,0xA2,0xA3,0xA4,0xA5,0xA6,
+	0xA7,0xA8,0xA9,0xAA,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,0xC2,0xC3,0xC4,
+	0xC5,0xC6,0xC7,0xC8,0xC9,0xCA,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD9,0xDA,0xE1,
+	0xE2,0xE3,0xE4,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xF1,0xF2,0xF3,0xF4,0xF5,0xF6,0xF7,
+	0xF8,0xF9,0xFA
+];
+
+//standard CDC Huffman table
+HT3=[
+	0x01,0x00,0x03,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,
+	0x00,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B
+];
+
+//standard CAC Huffman table
+HT4=[
+	0x11,0x00,0x02,0x01,0x02,0x04,0x04,0x03,0x04,0x07,0x05,0x04,0x04,0x00,0x01,0x02,
+	0x77,0x00,0x01,0x02,0x03,0x11,0x04,0x05,0x21,0x31,0x06,0x12,0x41,0x51,0x07,0x61,
+	0x71,0x13,0x22,0x32,0x81,0x08,0x14,0x42,0x91,0xA1,0xB1,0xC1,0x09,0x23,0x33,0x52,
+	0xF0,0x15,0x62,0x72,0xD1,0x0A,0x16,0x24,0x34,0xE1,0x25,0xF1,0x17,0x18,0x19,0x1A,
+	0x26,0x27,0x28,0x29,0x2A,0x35,0x36,0x37,0x38,0x39,0x3A,0x43,0x44,0x45,0x46,0x47,
+	0x48,0x49,0x4A,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0x63,0x64,0x65,0x66,0x67,
+	0x68,0x69,0x6A,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x82,0x83,0x84,0x85,0x86,
+	0x87,0x88,0x89,0x8A,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9A,0xA2,0xA3,0xA4,
+	0xA5,0xA6,0xA7,0xA8,0xA9,0xAA,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,0xC2,
+	0xC3,0xC4,0xC5,0xC6,0xC7,0xC8,0xC9,0xCA,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD9,
+	0xDA,0xE2,0xE3,0xE4,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xF2,0xF3,0xF4,0xF5,0xF6,0xF7,
+	0xF8,0xF9,0xFA
+];
+/*
+*/
+
+</script>
+</body>
+</html>
