@@ -33,4 +33,4 @@ A crossed red rectangle appears on MCUs that produced decode errors.
 
 **Limitations:** no support for progressive scans or arithmetic encoding.
 
-Take a look at the [tutorial](RepairingCorruptedJpeg-JVRT.pdf) 
+For more details see the [tutorial](RepairingCorruptedJpeg-JVRT.pdf) 
