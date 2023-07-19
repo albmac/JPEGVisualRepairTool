@@ -33,4 +33,4 @@ A crossed red rectangle appears on MCUs that produced decode errors.
 
 **Limitations:** partial support for restart markers; no support for progressive scans or arithmetic encoding.
 
-Take a look at the [tutorial](https://github.com/albmac/jpegVisualRepairTool) 
+Take a look at the [tutorial](RepairingCorruptedJpeg-JVRT.pdf) 
