@@ -304,7 +304,16 @@ cPicture.addEventListener( 'mouseup', function(e){
 
 //stop dragging if mouse exits picture area
 cPicture.addEventListener( 'mouseout', function(e){
-	if(isDragging) isDragging=0;
+	if(isDragging){
+		isDragging=0;
+		zDx+=e.pageX-dragStart.x;
+		zDy+=e.pageY-dragStart.y;
+		if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
+		if(zDy<ctxPicture.canvas.height*(1-zoomFactor)) zDy=ctxPicture.canvas.height*(1-zoomFactor);
+		if(zDx>0) zDx=0;
+		if(zDy>0) zDy=0;
+		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+	}
 });
 
 //drag image or select blocks
@@ -391,13 +400,13 @@ document.body.addEventListener("paste",function(ev){
 	console.timeEnd("idct");
 	render(-1,document.getElementById("layer").value);
 	selectedUpdate();
-	document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+	document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 });
 
 //copy selected MCU to clipboard
 document.body.addEventListener("copy",function(ev){
 	if(selectedMCU.i<0) return;
-	ev.preventDefault();
+	if(!MCUinfoDialog.open) ev.preventDefault();
 	var list=selectedMCU.list;
 	list.push(selectedMCU.i);
 	list=list.sort((a,b)=>a-b);
@@ -461,7 +470,7 @@ document.body.addEventListener("keydown",function(ev){
 					zDx=ctxPicture.canvas.width*(1-zoomFactor);
 					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
 				}
-				else if((selectedMCU.x)*mcuPixX<x){ //shift left by one MCU width
+				else if((selectedMCU.x)*mcuPixX<=x){ //shift left by one MCU width
 					zDx+=mcuPixX/rate;
 					if(zDx>0) zDx=0;
 					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
@@ -504,7 +513,7 @@ document.body.addEventListener("keydown",function(ev){
 					zDx=0;
 					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
 				}
-				else if((selectedMCU.x+1)*mcuPixX>x){ //shift left by one MCU width
+				else if((selectedMCU.x+1)*mcuPixX>=x){ //shift left by one MCU width
 					zDx-=mcuPixX/rate;
 					if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
 					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
@@ -522,6 +531,13 @@ document.body.addEventListener("keydown",function(ev){
 				render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
 			}
 			selectedMCU.list=[];
+			var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+			var y=(-zDy)*rate; //min y coordinate on screen
+			if((selectedMCU.y)*mcuPixY<=y){ //shift up by one MCU height
+				zDy+=mcuPixY/rate;
+				if(zDy>0) zDy=0;
+				ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+			}
 			selectedUpdate();
 			ev.preventDefault();
 		}
@@ -535,6 +551,13 @@ document.body.addEventListener("keydown",function(ev){
 				render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
 			}
 			selectedMCU.list=[];
+			var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
+			var y=(ctxPicture.canvas.height-zDy)*rate; //max y coordinate on screen
+			if((selectedMCU.y+1)*mcuPixY>=y){ //shift down by one MCU height
+				zDy-=mcuPixY/rate;
+				if(zDy<ctxPicture.canvas.height*(1-zoomFactor)) zDy=ctxPicture.canvas.height*(1-zoomFactor);
+				ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+			}
 			selectedUpdate();
 			ev.preventDefault();
 		}
@@ -668,7 +691,7 @@ function addMCU(){
 		extractPixel(selectedMCU.i);
 		render(-1,document.getElementById("layer").value);
 		selectedUpdate();
-		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 	}
 }
 
@@ -688,7 +711,7 @@ function removeMCU(){
 		console.timeEnd("idct");
 		render(-1,document.getElementById("layer").value);
 		selectedUpdate();
-		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 	}
 }
 	
@@ -745,10 +768,8 @@ function readFile(input) {
 	reader.onload = function() {
 		filebuf = new Uint8Array(reader.result);
 		decodeJpeg();
-//		setTimeout(decodeJpeg(),500);
 		originalMCUcount=mcucount;
-		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
-//		document.getElementById("MCUn").innerHTML="Loading file ...";
+		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 	};
 	reader.onerror = function() {
 		console.log(reader.error);
@@ -769,7 +790,7 @@ window.addEventListener("message",(event)=>{
 	reader.onload = function() {
 		filebuf = new Uint8Array(reader.result);
 		decodeJpeg();
-		document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 	}
 },false);
 
@@ -1523,12 +1544,12 @@ function rstEnable(){
 //Set RST marker
 function rstSet(){
 	if(selectedMCU.i<0) return;
-	MCUarray[selectedMCU.i].restart=document.querySelector("#rstNum").value;
+	MCUarray[selectedMCU.i].restart=Number(document.querySelector("#rstNum").value);
 	render(-1,document.getElementById("layer").value);
 }
 
 //Fix color difference between MCU(x,y) and MCU(x,y-1)
-//byc changing DC coefficient of the currently selected MCU
+//by changing DC coefficient of the currently selected MCU
 function fixColorDiff(){
 	if(selectedMCU.i<0||colorFixList.length==0) return;
 	var refMCU=[];	//MCUs to be matched in color
@@ -1813,7 +1834,7 @@ function backSrcInsert(){
 	selectedMCU.i=row*Mx+col;
 	selectedUpdate();
 	mcucount=MCUarray.length;
-	document.getElementById("MCUn").innerHTML="actual MCU: "+mcucount;
+	document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 }
 
 numSrcMax=100
