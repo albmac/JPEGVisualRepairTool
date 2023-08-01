@@ -9,7 +9,7 @@
 <body style="margin:0;">
 <canvas id="pictureCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
 <div id="tools" style="display:inline-block; width:230px; border:1px solid #d3d3d3; vertical-align: top;">
-<b>JPEG visual repair tool v1.0</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
+<b>JPEG visual repair tool v1.1</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
 <button onclick=newtab()>Open new tab</button><br>
 <input type="file" onchange="readFile(this)" multiple><br>
 <button onclick=saveFile()>Save...</button><br>
@@ -27,19 +27,19 @@ View channel
 <button onclick=MCUinfoDialog.showModal()>Extra MCU info</button>
 <button onclick=fixColorDiff()>Fix colors</button><br>
 <button onclick=backSearchDialog.showModal()>MCU back search</button><br>
-<button onclick=addMCU() style="width:7em;">Insert MCU</button> 
-<button onclick=removeMCU() style="width:7em;">Remove MCU</button><br>
+<button onclick=addMCU() style="width:7.5em;">Insert MCU</button> 
+<button onclick=removeMCU() style="width:7.5em;">Remove MCU</button><br>
 <input type="radio" id="dc1" name="delta" value="1"><label for="dc1">1</label>
 <input checked type="radio" id="dc10" name="delta" value="10"><label for="dc10">10</label>
 <input type="radio" id="dc20" name="delta" value="20"><label for="dc20">20</label>
 <input type="radio" id="dc50" name="delta" value="50"><label for="dc50">50</label>
-<input type="radio" id="dc100" name="delta" value="100"><label for="dc100">100</label>
+<input type="radio" id="dc100" name="delta" value="100"><label for="dc100">100</label><br>
 <input type="radio" id="dc200" name="delta" value="200"><label for="dc200">200</label>
 <input type="radio" id="dcX" name="delta" value="x"><label for="dcX">custom</label>
 <input type="text" maxlength="4" size="3" id="dcVal" name="dcX"><br>
 <button onclick=DCmodMCU(1) id="dc+" style="width:4em;" disabled>DC+</button> 
 <button onclick=DCmodMCU(-1) id="dc-" style="width:4em;" disabled>DC-</button>
-<button onclick=DCmodMCU(0) id="dcset" style="width:4em;" disabled>set DC</button><br>
+<button onclick=DCmodMCU(0) id="dcset" style="width:4.5em;" disabled>set DC</button><br>
 <canvas id="zoomCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
 <div id="rstdiv" style="display:none">show RST <input type="Checkbox" id="rst" onchange=rstEnable()>
 <select id="rstNum" name="rstNum">
@@ -78,7 +78,7 @@ View channel
 	</div>
 </dialog>
 <dialog id="infoDialog" style="border-radius:4px; border:1px solid;">
-<H2 style="display:inline">JPEG visual repair tool v1.0</H2> by Alberto Maccioni<br><br>
+<H2 style="display:inline">JPEG visual repair tool v1.1</H2> by Alberto Maccioni<br><br>
 This tool can load JPEG images while preserving MCU (Minimum Coded Unit) coding data 
 and allows editing at MCU level.<br>
 The purpose is to correct artifacts resulting from data corruption in JPEG files.<br>
@@ -90,7 +90,7 @@ You can view MCU pixel levels, coefficients, and binary datastream.<br>
 A crossed red rectangle appears on MCUs that generated decode errors.<br>
 Color fixing is performed by minimizing color difference between the top row of an MCU 
 and the bottom row of the corresponding MCU in the previous line.<br> 
-More info at <a href=https://github.com/albmac/jpegVisualRepairTool>github project page</a><br>
+More info at <a href="https://github.com/albmac/JPEGVisualRepairTool">github project page</a><br>
 Controls:<br>
 <b>mouse wheel</b> &rArr; zoom image<br>
 <b>left click</b> &rArr; select MCU; a black or white rectangle appears on selected MCU<br>
@@ -174,6 +174,7 @@ var ctxZoom = cZoom.getContext("2d");
 var cPicture = document.getElementById("pictureCanvas");
 var ctxPicture = cPicture.getContext("2d");
 MCUsrcArray=[];
+busy=false;
 
 //show coordinates of original picture
 cPicture.addEventListener("mousemove", function(e){
@@ -395,11 +396,12 @@ document.body.addEventListener("paste",function(ev){
 		MCUarray.splice(selectedMCU.i,0,MCUp[i]);	//insert new block
 		mcucount=MCUarray.length;
 	}
-	console.time("idct");
-	for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
-	console.timeEnd("idct");
-	render(-1,document.getElementById("layer").value);
-	selectedUpdate();
+//	console.time("idct");
+//	for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+//	console.timeEnd("idct");
+//	render(-1,document.getElementById("layer").value);
+//	selectedUpdate();
+	updateAllMCU(selectedMCU.i);
 	document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 });
 
@@ -582,6 +584,7 @@ function newtab(){
 
 //update zoom view and info about selected block 
 function selectedUpdate(){
+	if(selectedMCU.i<0) return;
 	var j=selectedMCU.i;
 	var i;
 	var list=selectedMCU.list.slice();
@@ -697,6 +700,7 @@ function addMCU(){
 
 //remove selected MCU and update view
 function removeMCU(){
+	if(busy) return;
 	if(selectedMCU.i>-1){
 		var min=selectedMCU.i,max=min;
 		for(var j=0;j<selectedMCU.list.length;j++){
@@ -706,11 +710,14 @@ function removeMCU(){
 		MCUarray.splice(min,1+max-min);	//remove elements
 		selectedMCU.list=[];
 		mcucount=MCUarray.length;
-		console.time("idct");
-		for(var i=min;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+		updateAllMCU(min);
+//		console.time("idct");
+/*		for(var i=min;i<MCUarray.length;i++){
+			extractPixel(i);	//update DC values and pixel data
+		}
 		console.timeEnd("idct");
 		render(-1,document.getElementById("layer").value);
-		selectedUpdate();
+		selectedUpdate();*/
 		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
 	}
 }
@@ -720,6 +727,7 @@ function removeMCU(){
 //0   -> new value
 //+-1 -> delta w.r.t actual value
 function DCmodMCU(value=1){
+	if(busy) return;
 	if(selectedMCU.i>-1&&document.getElementById("layer").value!="RGB"){	//only single channel
 		if(value==0){
 			var newDC=parseInt(document.getElementById("dcVal").value);
@@ -734,7 +742,7 @@ function DCmodMCU(value=1){
 				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C2";b++);
 				MCUarray[selectedMCU.i].blocks[b].coeff[0]=newDC;
 			}
-			for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data			
+			//for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data			
 		}
 		else{
 			var selected = document.querySelector('input[type=radio][name=delta]:checked');
@@ -752,10 +760,11 @@ function DCmodMCU(value=1){
 				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C2";b++);
 				MCUarray[selectedMCU.i].blocks[b].coeff[0]+=delta;
 			}
-			for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+			//for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
 		}
-		render(-1,document.getElementById("layer").value);
-		selectedUpdate();
+		updateAllMCU(selectedMCU.i);	//update DC values and pixel data
+		//render(-1,document.getElementById("layer").value);
+		//selectedUpdate();
 	}
 }
 	
@@ -763,6 +772,11 @@ function DCmodMCU(value=1){
 function readFile(input) {
 	file = input.files[0];
 	filename = file.name;
+	ctxPicture.canvas.width=700;
+	ctxPicture.canvas.height=200;
+	ctxPicture.font = "30px Arial";
+	ctxPicture.fillStyle = "black";
+	ctxPicture.fillText("Loading "+filename+"...",10,100); 
 	let reader = new FileReader();
 	reader.readAsArrayBuffer(file);
 	reader.onload = function() {
@@ -770,10 +784,10 @@ function readFile(input) {
 		decodeJpeg();
 		originalMCUcount=mcucount;
 		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
-	};
+	}
 	reader.onerror = function() {
 		console.log(reader.error);
-	};
+	}
 	for(let i=1;i<input.files.length;i++){	//in case of multiple files open additional tabs
 		let w=window.open(window.location.href,"_blank");
 		w.onload=(ev)=>{w.postMessage(input.files[i],"*")};
@@ -912,7 +926,7 @@ function decodeJpeg(){
 	document.querySelector("#rst").checked=false;
 	var i=0,j=0,size=0,r;
 	var X=0,Y=0;
-	var Nraw=0,Ny=0,Nc=0;
+	//var Nraw=0,Ny=0,Nc=0;
 	var sof0=0,endoffset=0;
 	var drioffset=0;
 	scanoffset=0;
@@ -1098,8 +1112,8 @@ function decodeJpeg(){
 		var decode_result,restartCount=0;
 		var rstErrStat_extra=0,errnum,next_rstnum=0,rst;
 		iblock=0;
-		rstErrStat=new Array;
-		for(i=0;i<50;i++) rstErrStat[i]=0;
+//		rstErrStat=new Array;
+//		for(i=0;i<50;i++) rstErrStat[i]=0;
 		var row=0;
 		var col=0;
 		var addRestart2NextMCU=-1;
@@ -1143,63 +1157,51 @@ function decodeJpeg(){
 			}
 			if(MCUdef[iblock]=='Y')	decode_result=decodeBlock(Y_BLOCK);
 			else if(MCUdef[iblock]=='C') decode_result=decodeBlock(C_BLOCK);
-			if((decode_result&0xF)==DECODE_PARTIAL_RESTART){
-				if(MCUdef[iblock]=='Y') Ny++;
-				if(MCUdef[iblock]=='C') Nc++;
-				iblock++;
-			}
-			if((decode_result&0xF)==DECODE_RESTART||(decode_result&0xF)==DECODE_PARTIAL_RESTART){
+			if((decode_result&0xF)==DECODE_RESTART){
 				rst=decode_result>>8;
-				if(restartCount<restartInt){
-					if(iblock<MCUdef.length){
-						MCUarray[mcucount].blocks[iblock].errors+=
-							" Restart interval error ("+(restartCount-restartInt)+": "+
-							restartCount+" MCU instead of "+restartInt+")";
-						console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
-					}
-				}
-				restartCount=0;
-				if(iblock>0){	//some data was present; could be complete or partial
-					extractPixel(mcucount);
-					if(iblock<MCUdef.length){
-						//MCUarray[mcucount].blocks[iblock].errors+=
-						var ee=" error: missing component  ("+iblock+" instead of "+MCUdef.length+")";
-						console.log("MCU"+ee);
-					}
-					mcucount++;
-					iblock=0;
-				}
-				if(rst!=next_rstnum){
-/*					MCUarray[mcucount].blocks[iblock].errors+=
-						" Restart marker # error ("+rst+" instead of "+next_rstnum+")";
-					console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
-*/				}
-				next_rstnum=rst+1;
-				if(next_rstnum>7) next_rstnum=0;
 				addRestart2NextMCU=rst;
+			}
+			if((decode_result&0xF)==DECODE_PARTIAL_RESTART){
+				rst=decode_result>>8;
+				addRestart2NextMCU=rst;
+				if(restartInt>0&&iblock==0){	//on new MCU only
+					restartCount++;
+				}
+				if(iblock<MCUdef.length-1){
+					MCUarray[mcucount].blocks[iblock].errors+=
+						" missing component  ("+(iblock+1)+" instead of "+MCUdef.length+")";
+					//console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
+				}
+				mcucount++;
+				iblock=0;
 			}
 			else if((decode_result&0xF)==DECODE_OK){
 				if(restartInt>0&&iblock==0){	//on new MCU only
 					restartCount++;
-					errnum=restartCount-restartInt;
-					if(errnum>0){
-						MCUarray[mcucount].blocks[iblock].errors+=
-							" Restart interval error (+"+errnum+": "+restartCount+" MCU instead of "+restartInt+")";
-						console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
-						if(errnum<50) rstErrStat[errnum]++;
-						else rstErrStat_extra=1;
-					}
-				}
-				if(MCUdef[iblock]=='Y') Ny++;
-				if(MCUdef[iblock]=='C') Nc++;
-				iblock++;
-				if(iblock>=MCUdef.length){	//end of MCU: decode coefficients
-					iblock=0;
 					if(addRestart2NextMCU>-1){ 
 						MCUarray[mcucount].restart=addRestart2NextMCU;
 						addRestart2NextMCU=-1;
+						if(MCUarray[mcucount].restart!=next_rstnum){
+							MCUarray[mcucount].blocks[iblock].errors+=
+								" Restart marker # error ("+rst+" instead of "+next_rstnum+")";
+							console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
+						}
+						next_rstnum=MCUarray[mcucount].restart+1;
+						if(next_rstnum>7) next_rstnum=0;
+						errnum=restartCount-restartInt;
+						if(errnum>0){
+							MCUarray[mcucount].blocks[iblock].errors+=
+								" Restart interval error: +"+errnum;
+							console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
+							//if(errnum<50) rstErrStat[errnum]++;
+							//else rstErrStat_extra=1;
+						}
+						restartCount=0;
 					}
-					extractPixel(mcucount);
+				}
+				iblock++;
+				if(iblock>=MCUdef.length){	//end of MCU
+					iblock=0;
 					mcucount++;
 				}
 			}
@@ -1239,7 +1241,7 @@ function decodeJpeg(){
 				if(iblock==0) MCUarray.pop();	//remove this empty block
 			}
 			else{
-				console.log("Unknown error (0x"+decode_result.toString(16)+")");
+//				console.log("MCU"+mcucount+" Unknown code error (0x"+decode_result.toString(16)+")");
 					//break;
 			}					
 		}
@@ -1266,28 +1268,33 @@ function decodeJpeg(){
 		}
 		document.getElementById("rstdiv").style.display=restartInt>-1?'':'none';
 		drawRestart=document.querySelector("#rst").checked;
-		render(-1,document.getElementById("layer").value);
+		//render(-1,document.getElementById("layer").value);
+		updateAllMCU(0);
 	}
 	console.timeEnd("decode");
 }
 
 //draw MCU using pre-calculated Y,Cb,Cr arrays
-//block=MCU index; draw all MCUs if block<0
-//mode=RGB,Y,C1,C2
-function render(block=-1,mode="RGB"){
+//block  = MCU index; draw all MCUs if block<0
+//length = number of MCU to draw
+//mode   = RGB,Y,C1,C2
+function render(block=-1,mode="RGB",length=-1){
 	if(MCUarray.length==0) return;
-	console.time("render");
+//	console.time("render");
+	var max;
 	row=0,col=0,renderall=0;
-	max=MCUarray.length;
-	if(block>=0&&block<max){
-		row=Math.floor(block/Mx);
-		col=block-row*Mx;
-		max=block+1;
-	}
-	else{
+	if(block<=-1){
 		block=0;
 		renderall=1;
+		max=MCUarray.length;
 	}
+	else if(block<MCUarray.length){
+		row=Math.floor(block/Mx);
+		col=block-row*Mx;
+		max=length>0?block+length:block+1;
+		if(max>MCUarray.length) max=MCUarray.length;
+	}
+	else return;
 	for(i=block;i<max;i++){
 		var imgData = ctx.createImageData(mcuPixX,mcuPixY);
 		if(mode=="RGB"){
@@ -1341,11 +1348,11 @@ function render(block=-1,mode="RGB"){
 		if(drawRestart&&MCUarray[i].restart>-1){
 			ctx.beginPath();
 			ctx.lineWidth = "1";
-			ctx.strokeStyle = "green";
-			ctx.moveTo(mcuPixX*col,mcuPixY*(row+1)-1);
+			//ctx.strokeStyle = "green";
+			//ctx.moveTo(mcuPixX*col,mcuPixY*(row+1)-1);
 			//ctx.lineTo(mcuPixX*(col),mcuPixY*(row+1)-1);
 			//ctx.lineTo(mcuPixX*(col+1),mcuPixY*(row+1)-1);
-			ctx.stroke();
+			//ctx.stroke();
 			ctx.font = mcuPixY+"px Arial";
 			ctx.fillStyle = "green";
 			ctx.fillText("R"+MCUarray[i].restart, mcuPixX*col,mcuPixY*(row+1)-2); 
@@ -1362,7 +1369,7 @@ function render(block=-1,mode="RGB"){
 		for(;col<Mx;col++) ctx.putImageData(imgData,mcuPixX*col,mcuPixY*row);
 	}
 	ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
-	console.timeEnd("render");
+//	console.timeEnd("render");
 }
 
 //draw MCU on zoom canvas
@@ -1532,6 +1539,23 @@ function extractPixel(MCU){
 				}
 			}
 		}
+	}
+}
+
+//calculate pixel data and display all MCUs, starting from i
+//works in chunks of 3000 MCU to avoid complete lockup
+function updateAllMCU(i){
+	busy=true;
+	if(i<0) i=0;
+	var n=i;
+	for(var j=0;j<3000&&i<MCUarray.length;j++){
+		extractPixel(i++);	//update DC values and pixel data
+	}
+	render(n,document.getElementById("layer").value,3000);
+	if(i<MCUarray.length) setTimeout(updateAllMCU,0,i);
+	else{ 
+		selectedUpdate();
+		busy=false;
 	}
 }
 
