@@ -8,11 +8,12 @@
 </head>
 <body style="margin:0;">
 <canvas id="pictureCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
-<div id="tools" style="display:inline-block; width:230px; border:1px solid #d3d3d3; vertical-align: top;">
-<b>JPEG visual repair tool v1.1</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
+<div id="tools" style="display:inline-block; width:250px; border:1px solid #d3d3d3; vertical-align: top;">
+<b>JPEG visual repair tool v1.2</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
+<input type = "button" value = "Open..." onclick=document.getElementById('imgOpen').click()>
+<input id = "imgOpen" type="file" style='visibility:hidden;width:0%' onchange="readFile(this)" multiple>
+<button onclick=saveFile()>Save...</button>&nbsp;
 <button onclick=newtab()>Open new tab</button><br>
-<input type="file" onchange="readFile(this)" multiple><br>
-<button onclick=saveFile()>Save...</button><br>
 View channel 
 <select onchange="setLayer()" name="" id="layer">
 <option value="RGB" selected>RGB</option>
@@ -23,10 +24,11 @@ View channel
 </select><br>
 <div id="imgInfo"></div>
 <div id="MCUn"></div>
-<div id="MCUsel"></div>
-<button onclick=MCUinfoDialog.showModal()>Extra MCU info</button>
+<button onclick=imageInfoDialog.showModal()>Image info</button>
+<button onclick=MCUinfoDialog.showModal()>MCU info</button>
 <button onclick=fixColorDiff()>Fix colors</button><br>
-<button onclick=backSearchDialog.showModal()>MCU back search</button><br>
+<button onclick=backSearchDialog.showModal()>MCU back search</button>
+<input type="Checkbox" id="shift">Shift MCU<br>
 <button onclick=addMCU() style="width:7.5em;">Insert MCU</button> 
 <button onclick=removeMCU() style="width:7.5em;">Remove MCU</button><br>
 <input type="radio" id="dc1" name="delta" value="1"><label for="dc1">1</label>
@@ -54,7 +56,9 @@ View channel
 <option value=7>RST7</option>
 </select>
 <button onclick=rstSet() id="rstNumSet" style="width:3em;">set</button></div>
-<div id="txt2"></div>
+<div id="MCUsel"></div>
+<div id="shiftInfo"></div>
+<div id="coord"></div>
 <div id="zoom"></div>
 </div><br>
 <div id="selectedBlock" style="width: 100%;overflow-wrap: break-word;"></div>
@@ -63,7 +67,7 @@ View channel
 	Variants <input type="number" id="variants" maxlength="3" size="4" value="100"><br>
 	<button onclick=backSearch()>Search</button>
 	<button onclick=backSrcInsert()>Insert</button>
-	<button value="cancel" onclick=document.getElementById("backSearchDialog").close()>Cancel</button>
+	<button value="cancel" onclick=backSearchDialog.close()>Cancel</button>
 	<div id="srcRes">
 	</div>
 </dialog>
@@ -77,11 +81,18 @@ View channel
 	<div id="info">
 	</div>
 </dialog>
+<dialog id="imageInfoDialog" style="border-radius:4px; border:1px solid; position: right; max-width: 80%">
+	<div id="imgInfoExt">
+	</div>
+	<button value="ok" onclick=imageInfoDialog.close()>OK</button><br><br>
+	Points <input type="number" id="corruptPoints" maxlength="3" size="3" value=1> 
+	<button onclick=corruptFile(imageInfoDialog.querySelector("#corruptPoints").value)>Corrupt image</button>
+</dialog>
 <dialog id="infoDialog" style="border-radius:4px; border:1px solid;">
-<H2 style="display:inline">JPEG visual repair tool v1.1</H2> by Alberto Maccioni<br><br>
+<H2 style="display:inline">JPEG visual repair tool v1.2 (Sep '23)</H2> by Alberto Maccioni<br><br>
 This tool can load JPEG images while preserving MCU (Minimum Coded Unit) coding data 
 and allows editing at MCU level.<br>
-The purpose is to correct artifacts resulting from data corruption in JPEG files.<br>
+The purpose is to correct artifacts resulting from file corruption.<br>
 You can delete, insert, copy, paste MCUs.<br>
 You can change DC level of each MCU.<br>
 You can view the image as RGB, Y, Cb, Cr.<br>
@@ -98,10 +109,13 @@ Controls:<br>
 <b>left button drag</b> &rArr; drag image<br>
 <b>right click</b> &rArr; select MCU for color fixing; a red rectangle appears on selected MCU<br>
 <b>right button drag</b> &rArr; extend selection for color fixing<br>
+<b>esc</b> &rArr; unselect MCUs<br>
 <b>ctrl-c</b> &rArr; copy selected MCUs<br>
 <b>ctrl-v</b> &rArr; paste before selected MCU<br>
+<b>ctrl-z</b> &rArr; undo last operation<br>
 <b>del</b> &rArr; delete MCU<br>
 <b>i</b> &rArr; extra MCU info<br>
+<b>s</b> &rArr; shift MCU rendering using left/right keys<br>
 <b>1</b> &rArr; switch to RGB view<br>
 <b>2</b> &rArr; switch to Y view<br>
 <b>3</b> &rArr; switch to Cb view<br>
@@ -127,6 +141,8 @@ Controls:<br>
 
  You should have received a copy of the GNU General Public License
  along with JPEG visual repair tool. If not, see <http://www.gnu.org/licenses/>.
+*/
+/*
 */
 filename="";
 numMCU=0;
@@ -155,8 +171,14 @@ Rbitcount=0;
 Wbitcount=0;
 MCUdef=['Y','Y','C','C'];		//default MCU composition
 restartInt=-1;
-dqt=new Array();
-dht=new Array();
+YDC=[];
+YAC=[];
+CDC=[];
+CAC=[];
+qmatY=[];
+qmatC=[];
+dqt=[];
+dht=[];
 zoomFactor=1;
 zDx=0,zDy=0;
 isDragging=0;
@@ -175,6 +197,8 @@ var cPicture = document.getElementById("pictureCanvas");
 var ctxPicture = cPicture.getContext("2d");
 MCUsrcArray=[];
 busy=false;
+shiftRendering=0;
+undoList=[];
 
 //show coordinates of original picture
 cPicture.addEventListener("mousemove", function(e){
@@ -184,7 +208,7 @@ cPicture.addEventListener("mousemove", function(e){
 	var x1=(x-zDx)*rate,y1=(y-zDy)*rate;
 	var str="xy("+x1.toFixed(0)+","+y1.toFixed(0)+")";
 	if(mcuPixX>0) str+=", MCU("+Math.floor(x1/mcuPixX)+";"+Math.floor(y1/mcuPixY)+")";
-	document.getElementById("txt2").innerHTML=str;
+	document.getElementById("coord").innerHTML=str;
 });
 
 //select MCU under the cursor
@@ -219,7 +243,7 @@ cPicture.addEventListener("click", function(e) {
 		console.log(selectedMCU.list);
 	}
 	for(var i=0;i<colorFixList.length;i++){
-		render(colorFixList[i],document.getElementById("layer").value);	//redraw block without selection rectangle
+		render(colorFixList[i].i,document.getElementById("layer").value);	//redraw block without selection rectangle
 	}
 	colorFixList.length=0;	//clear fix list if present
 	selectedUpdate();
@@ -370,21 +394,21 @@ cZoom.addEventListener("mousemove", function(e){
 		var C2=MCUarray[selectedMCU.i].viewC2[x+y*mcuPixY];
 		str+="YCbCr["+Y+";"+C1+";"+C2+"]";
 	}
-	document.getElementById("txt2").innerHTML=str;
+	document.getElementById("coord").innerHTML=str;
 });
 
 //paste from clipboard before currently selected MCU
 document.body.addEventListener("paste",function(ev){
 	if(selectedMCU.i<0) return;
 	ev.preventDefault();
-	console.log("paste MCU to position "+selectedMCU.i);
 	var data=(ev.clipboardData||window.clipboardData).getData("text");
 	var MCUp=JSON.parse(data);
-	console.log("paste "+MCUp.length+" MCU");
+	var n=0;
 	for(var i=MCUp.length-1;i>=0;i--){	//reverse order
 		if(MCUp[i].length!=MCUarray[0].length){
 			console.log("not a standard MCU!");
-			return;
+			mcucount=MCUarray.length;
+			break;
 		}
 		MCUp[i].bufferY=new ArrayBuffer(mcuPixX*mcuPixY);
 		MCUp[i].bufferC1=new ArrayBuffer(mcuPixX*mcuPixY);
@@ -395,14 +419,12 @@ document.body.addEventListener("paste",function(ev){
 		for(var j=0;j<MCUp[i].viewY.length;j++) MCUp[i].viewY[j]=MCUp[i].viewC1[j]=MCUp[i].viewC2[j]=255;
 		MCUarray.splice(selectedMCU.i,0,MCUp[i]);	//insert new block
 		mcucount=MCUarray.length;
+		n++;
 	}
-//	console.time("idct");
-//	for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
-//	console.timeEnd("idct");
-//	render(-1,document.getElementById("layer").value);
-//	selectedUpdate();
+	undoList.push({action: "paste", position: selectedMCU.i, count: n});
 	updateAllMCU(selectedMCU.i);
 	document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
+	console.log("Paste MCU@"+selectedMCU.i+","+n);
 });
 
 //copy selected MCU to clipboard
@@ -441,6 +463,7 @@ document.body.addEventListener("keydown",function(ev){
 		if(MCUinfoDialog.open) infoDlgChangeSel(0);
 		else{
 			if(ev.shiftKey){	//extend selection
+				if(shiftRendering!=0) resetShift();	//reset shift
 				if(selectedMCU.i>-1){
 					if(selectedMCU.list.length==0){
 						selectedMCU.list.push(selectedMCU.i-1);
@@ -455,7 +478,22 @@ document.body.addEventListener("keydown",function(ev){
 					selectedUpdate();
 				}
 			}
+			else if(document.getElementById("shift").checked){	//shift MCU rendering
+				if(selectedMCU.i>-1){
+					shiftRendering--;
+					render(selectedMCU.i,document.getElementById("layer").value,mcucount,shiftRendering);
+					var shifted=selectedMCU.i+shiftRendering;
+					ctx.strokeStyle = "yellow";
+					ctx.beginPath();
+					ctx.lineWidth = "1";
+					ctx.rect(shifted%Mx*mcuPixX,Math.floor(shifted/Mx)*mcuPixY,mcuPixX-1,mcuPixY-1);
+					ctx.stroke();
+					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+					document.getElementById("shiftInfo").innerHTML="Shift rendering by "+shiftRendering+" MCU";
+				}
+			}
 			else{	//change selection
+				if(shiftRendering!=0) resetShift();	//reset shift
 				if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
 				selectedMCU.i--;
 				if(selectedMCU.i<0) selectedMCU.i=0;
@@ -485,6 +523,7 @@ document.body.addEventListener("keydown",function(ev){
 		if(MCUinfoDialog.open) infoDlgChangeSel(1);
 		else{
 			if(ev.shiftKey){	//extend selection
+				if(shiftRendering!=0) resetShift();	//reset shift
 				if(selectedMCU.i>-1){
 					if(selectedMCU.list.length==0){
 						selectedMCU.list.push(selectedMCU.i+1);
@@ -498,7 +537,23 @@ document.body.addEventListener("keydown",function(ev){
 					selectedUpdate();
 				}
 			}
+			else if(document.getElementById("shift").checked){	//shift MCU rendering
+				if(selectedMCU.i>-1){
+					render(selectedMCU.i+shiftRendering,document.getElementById("layer").value); //uncover original block
+					shiftRendering++;
+					render(selectedMCU.i,document.getElementById("layer").value,mcucount,shiftRendering);
+					var shifted=selectedMCU.i+shiftRendering;
+					ctx.strokeStyle = "yellow";
+					ctx.beginPath();
+					ctx.lineWidth = "1";
+					ctx.rect(shifted%Mx*mcuPixX,Math.floor(shifted/Mx)*mcuPixY,mcuPixX,mcuPixY);
+					ctx.stroke();
+					ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+					document.getElementById("shiftInfo").innerHTML="Shift rendering by "+shiftRendering+" MCU";
+				}
+			}
 			else{	//change selection
+				if(shiftRendering!=0) resetShift();	//reset shift
 				if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
 				selectedMCU.i++;
 				if(selectedMCU.i>=mcucount) selectedMCU.i=mcucount-1;
@@ -526,6 +581,7 @@ document.body.addEventListener("keydown",function(ev){
 	}
 	if(key==38){	//up
 		if(!MCUinfoDialog.open){
+			if(shiftRendering!=0) resetShift();	//reset shift
 			if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
 			if(selectedMCU.y>0) selectedMCU.y--;
 			selectedMCU.i=selectedMCU.y*Mx+selectedMCU.x;
@@ -546,6 +602,7 @@ document.body.addEventListener("keydown",function(ev){
 	}
 	if(key==40){	//down
 		if(!MCUinfoDialog.open){
+			if(shiftRendering!=0) resetShift();	//reset shift
 			if(selectedMCU.x>-1) render(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);	//redraw last block
 			if(selectedMCU.y<Math.floor(mcucount/Mx)-1) selectedMCU.y++;
 			selectedMCU.i=selectedMCU.y*Mx+selectedMCU.x;
@@ -565,7 +622,57 @@ document.body.addEventListener("keydown",function(ev){
 		}
 	}
 	if(key==46){	//del
+		if(shiftRendering!=0) resetShift();	//reset shift
 		removeMCU();
+	}
+	if(key==27){	//esc
+		if(shiftRendering!=0) resetShift();	//reset shift
+		for(var j=0;j<selectedMCU.list.length;j++){
+			render(selectedMCU.list[j],document.getElementById("layer").value);	//clear selection rectangles
+		}
+		selectedMCU.list=[];	//clear extended selection
+		for(var i=0;i<colorFixList.length;i++){
+			render(colorFixList[i].i,document.getElementById("layer").value);	//redraw block without selection rectangle
+		}
+		colorFixList.length=0;	//clear fix list if present
+		selectedUpdate();
+	}
+	if(key==83){	//s
+		var sh=document.getElementById("shift");
+		sh.checked=!sh.checked;
+		if(sh.checked==false&&shiftRendering!=0){
+			resetShift();	//reset shift
+			selectedUpdate();
+		}
+	}
+	if(key==90){	//z
+		if(ev.ctrlKey&&undoList.length>0){	//undo
+			if(shiftRendering!=0) resetShift();	//reset shift
+			item=undoList.pop();
+			console.log("undo: "+item.action);
+			switch(item.action){
+				case "add":
+					MCUarray.splice(item.position,1);	//remove elements
+				break;
+				case "paste":
+					MCUarray.splice(item.position,item.count);	//remove elements
+				break;
+				case "delete":
+					for(var i=item.cells.length-1;i>=0;i--)
+						MCUarray.splice(item.position,0,item.cells[i]);	//insert elements
+				break;
+				case "DC":
+					MCUarray.splice(item.position,1,item.cell);	//insert elements
+				break;
+				case "fixColor":
+					MCUarray.splice(item.position,item.cells.length);	//remove elements
+					for(var i=item.cells.length-1;i>=0;i--)
+						MCUarray.splice(item.position,0,item.cells[i]);	//insert elements
+				break;
+			}
+			mcucount=MCUarray.length;
+			updateAllMCU(item.position);
+		}
 	}
 	if(key==219){	//[
 	}
@@ -602,8 +709,9 @@ function selectedUpdate(){
 		ctx.stroke();
 	}
 	renderZoom(selectedMCU.i,document.getElementById("layer").value);
-	var str="MCU"+selectedMCU.i+" (X "+selectedMCU.x+";Y "+selectedMCU.y+")";
-	document.getElementById("MCUsel").innerHTML="Selected "+str;
+	var str="MCU"+selectedMCU.i+" ("+selectedMCU.x+";"+selectedMCU.y+")";
+	var str2=list.length>1?(" ("+list.length+" total)"):"";
+	document.getElementById("MCUsel").innerHTML="Selected "+str+str2;
 	ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
 	var dlg=document.getElementById("MCUinfoDialog");
 	var div=document.getElementById("info");
@@ -695,6 +803,8 @@ function addMCU(){
 		render(-1,document.getElementById("layer").value);
 		selectedUpdate();
 		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
+		undoList.push({action: "add", position: selectedMCU.i});
+		console.log("Inserted MCU@"+selectedMCU.i);
 	}
 }
 
@@ -707,18 +817,13 @@ function removeMCU(){
 			if(selectedMCU.list[j]<min) min=selectedMCU.list[j];
 			if(selectedMCU.list[j]>max) max=selectedMCU.list[j];
 		}
-		MCUarray.splice(min,1+max-min);	//remove elements
+		removed=MCUarray.splice(min,1+max-min);	//remove elements
+		undoList.push({action: "delete", position: min, cells: removed});
 		selectedMCU.list=[];
 		mcucount=MCUarray.length;
 		updateAllMCU(min);
-//		console.time("idct");
-/*		for(var i=min;i<MCUarray.length;i++){
-			extractPixel(i);	//update DC values and pixel data
-		}
-		console.timeEnd("idct");
-		render(-1,document.getElementById("layer").value);
-		selectedUpdate();*/
 		document.getElementById("MCUn").innerHTML="MCU count: "+mcucount;
+		console.log("Deleted MCU: "+min+","+removed.length);
 	}
 }
 	
@@ -729,6 +834,7 @@ function removeMCU(){
 function DCmodMCU(value=1){
 	if(busy) return;
 	if(selectedMCU.i>-1&&document.getElementById("layer").value!="RGB"){	//only single channel
+		undoList.push({action: "DC", position: selectedMCU.i, cell: structuredClone(MCUarray[selectedMCU.i])});
 		if(value==0){
 			var newDC=parseInt(document.getElementById("dcVal").value);
 			if(document.getElementById("layer").value=="Y"){
@@ -742,7 +848,6 @@ function DCmodMCU(value=1){
 				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C2";b++);
 				MCUarray[selectedMCU.i].blocks[b].coeff[0]=newDC;
 			}
-			//for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data			
 		}
 		else{
 			var selected = document.querySelector('input[type=radio][name=delta]:checked');
@@ -760,11 +865,9 @@ function DCmodMCU(value=1){
 				for(b=1;b<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[b].blockType!="C2";b++);
 				MCUarray[selectedMCU.i].blocks[b].coeff[0]+=delta;
 			}
-			//for(var i=selectedMCU.i;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
 		}
 		updateAllMCU(selectedMCU.i);	//update DC values and pixel data
-		//render(-1,document.getElementById("layer").value);
-		//selectedUpdate();
+		console.log("DC mod @"+selectedMCU.i);
 	}
 }
 	
@@ -917,6 +1020,16 @@ function setLayer(){
 		ctx.stroke();
 		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
 		renderZoom(selectedMCU.y*Mx+selectedMCU.x,document.getElementById("layer").value);
+		if(shiftRendering!=0){
+			render(selectedMCU.i,document.getElementById("layer").value,mcucount,shiftRendering);
+			var shifted=selectedMCU.i+shiftRendering;
+			ctx.strokeStyle = "yellow";
+			ctx.beginPath();
+			ctx.lineWidth = "1";
+			ctx.rect(shifted%Mx*mcuPixX,Math.floor(shifted/Mx)*mcuPixY,mcuPixX,mcuPixY);
+			ctx.stroke();
+			ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+		}
 	}
 }
 
@@ -926,17 +1039,28 @@ function decodeJpeg(){
 	document.querySelector("#rst").checked=false;
 	var i=0,j=0,size=0,r;
 	var X=0,Y=0;
-	//var Nraw=0,Ny=0,Nc=0;
 	var sof0=0,endoffset=0;
 	var drioffset=0;
+	var infoStr="Image info<br>"+filename+"<br>";
 	scanoffset=0;
 	dht.length=0;
 	dqt.length=0;
 	zoomFactor=1;
 	zDx=0,zDy=0;
+	shiftRendering=0;
 	ErrCnt=0;
+	YDC=structuredClone(YDCstd);
+	CDC=structuredClone(CDCstd);
+	YAC=structuredClone(YACstd);
+	CAC=structuredClone(CACstd);
+	qmatY=structuredClone(qmatYstd);
+	qmatC=structuredClone(qmatCstd);
+	undoList=[];
 	console.time("decode");
+	var infoDiv=document.getElementById("imgInfoExt");
+	infoDiv.innerHTML="";
 	console.log("Addr\tMarker\tType\n");
+	infoStr+="Markers:<br><table style='width:auto;white-space:nowrap'><tr><th>Address</th><th>Marker</th><th>Type</th>";
 	for(f=0;f<filebuf.length;){
 		r=filebuf[f++];
 		if(r==0xFF){ 	//is it a marker?
@@ -948,16 +1072,27 @@ function decodeJpeg(){
 						if(markers[j][1]==1){	//markers with additional data
 							size=(filebuf[f++]<<8)+filebuf[f++];
 							console.log(str+markers[j][2]+" ("+size+" bytes)");
+							infoStr+="<tr><td>0x"+i.toString(16).toUpperCase()+"</td><td>0xFF"
+								+(r2>=0x10?"":"0")+r2.toString(16).toUpperCase()+"</td><td>"
+								+markers[j][2]+" ("+size+" bytes)</td></tr>";
 							for(k=size-2;k;k--) f++;
 							i+=size;
 						}
-						else if(restartInt==-1||(restartInt==0&&!(r2>=0xD0&&r2<=0xD7))) console.log(str+markers[j][2]+"\n");	//no RSTX
+						else if(restartInt==-1||(restartInt==0&&!(r2>=0xD0&&r2<=0xD7))){ //only if no RSTX
+							console.log(str+markers[j][2]+"\n");
+							infoStr+="<tr><td>0x"+i.toString(16).toUpperCase()+"</td><td>0xFF"
+							+(r2>=0x10?"":"0")+r2.toString(16).toUpperCase()+"</td><td>"
+							+markers[j][2]+"</td></tr>";
+						}
 						if(markers[j][0]==0xDA){
 							if(size<20) scanoffset=i+2;	//SOS -> start of stream
 						}
 						else if(markers[j][0]==0xD9){
 							if(scanoffset!=0) endoffset=i;		//EOI -> end of image
-							if(i<filebuf.length-100) console.log("Early EOF @0x"+i.toString(16));
+							if(i<filebuf.length-100){
+								console.log("Early EOF @0x"+i.toString(16));
+								infoStr+="<tr><td>0x"+i.toString(16).toUpperCase()+"</td><td>0xFFD9</td><td>Early EOF</td></tr>";
+							}
 						}
 						else if(markers[j][0]==0xDD){
 							if(size==4){			//DRI define restart interval
@@ -977,12 +1112,17 @@ function decodeJpeg(){
 						break;
 					}
 				}
-				if(j==markers.length) console.log(str+" ??\n");
+				if(j==markers.length){
+					console.log(str+" ??\n");
+					infoStr+="<tr><td>0x"+i.toString(16).toUpperCase()+"</td><td>0xFF"
+						+(r2>=0x10?"":"0")+r2.toString(16).toUpperCase()+"</td><td>??</td></tr>";
+				}
 			}
 			i++;
 		}
 		i++;
 	}
+	infoStr+="</table>";
 	if(endoffset==0) endoffset=filebuf.length;
 	for(i=0;i<dqt.length;i++){	//DQT
 		f=dqt[i];
@@ -999,11 +1139,14 @@ function decodeJpeg(){
 			}
 			if(Tq==0){
 				qmatY=zigzag2square(qmatY);
-				//printmat(qmatY,"QTY");
+				infoStr+="Y quantization table: ";
+				infoStr+=printmat(qmatY,"",0);
 			}
 			else if(Tq==1){
 				qmatC=zigzag2square(qmatC);
 				//printmat(qmatC,"QTC");
+				infoStr+="C quantization table: ";
+				infoStr+=printmat(qmatC,"",0);
 			}
 		}
 	}	
@@ -1019,6 +1162,7 @@ function decodeJpeg(){
 		else if(size==HT3.length&&equal(table,HT3)) console.log("standard Huffman table (C DC) @0x"+(dht[h]+2).toString(16));
 		else if(size==HT4.length&&equal(table,HT4)) console.log("standard Huffman table (C AC) @0x"+(dht[h]+2).toString(16));
 		else{
+			infoStr+="Custom Huffman table: ";
 			var huffsize=new Array(256),fullcode=new Array(256);
 			for(var z=0;z<size;){
 				if((table[z]&0xF)==0&&(table[z]>>4)==0) HTX=YDC;
@@ -1063,10 +1207,10 @@ function decodeJpeg(){
 				HTX[ncode][1]=-1;
 				HTX[ncode][2]=-1;
 			}
-			if(HTX==YDC) console.log("YDC ");
-			else if(HTX==YAC) console.log("YAC ");
-			else if(HTX==CDC) console.log("CDC ");
-			else if(HTX==CAC) console.log("CAC ");
+			if(HTX==YDC){ console.log("YDC "); infoStr+="Y (DC)<br>";}
+			else if(HTX==YAC){ console.log("YAC "); infoStr+="Y (AC)<br>";}
+			else if(HTX==CDC){ console.log("CDC "); infoStr+="C (DC)<br>";}
+			else if(HTX==CAC){ console.log("CAC "); infoStr+="C (AC)<br>";}
 			//if(HTX) for(var i=0;HTX[i][0]!=-1;i++) console.log("["+HTX[i][0].toString(16)+" "+HTX[i][1].toString(16)+" "+HTX[i][2].toString(16)+"]");
 		}
 	}
@@ -1074,16 +1218,20 @@ function decodeJpeg(){
 		f=drioffset;
 		restartInt=(filebuf[f++]<<8)+filebuf[f++];
 		console.log("Restart interval: "+restartInt);
+		infoStr+="Restart interval: "+restartInt;
 	}
 	if(sof0){		//start of frame
 		MCUdef=new Array;
 		f=sof0;
-		console.log("Precision="+filebuf[f++]);
+		console.log("Precision="+filebuf[f]);
+		infoStr+="Precision: "+filebuf[f]+"<br>";
+		f++;
 		Y=(filebuf[f++]<<8)+filebuf[f++];
 		X=(filebuf[f++]<<8)+filebuf[f++];
 		comp=filebuf[f++];
 		mcuPixX=0,mcuPixY=0;
 		console.log(X+"x"+Y+" "+comp+" components:\n");
+		infoStr+="Size: "+X+"x"+Y+" pixel<br>components: "+comp+"<br>";
 		for(;comp;comp--){
 			id=filebuf[f++];
 			sfact=filebuf[f++];
@@ -1091,6 +1239,7 @@ function decodeJpeg(){
 			if(dest==0) type='Y';
 			if(dest==1) type='C';
 			console.log("ID:"+id+" ["+sfact.toString(16)+"] Dest:"+dest);
+			infoStr+="ID: "+id+" ["+sfact.toString(16)+"] Dest:"+dest+"<br>";
 			for(n=(sfact>>4)*(sfact&0xF);n;n--) MCUdef.push(type);
 			if((sfact>>4)>mcuPixX) mcuPixX=(sfact>>4);
 			if((sfact&0xF)>mcuPixY) mcuPixY=(sfact&0xF);
@@ -1098,6 +1247,7 @@ function decodeJpeg(){
 		mcuPixX*=8;
 		mcuPixY*=8;
 		console.log("MCU: "+MCUdef+" ("+mcuPixX+"x"+mcuPixY+" pixel)");
+		infoStr+="MCU: "+MCUdef+" ("+mcuPixX+"x"+mcuPixY+" pixel)<br>";
 		Mx=Math.ceil(X/mcuPixX);
 		My=Math.ceil(Y/mcuPixY);
 		numMCU=Mx*My;
@@ -1105,6 +1255,7 @@ function decodeJpeg(){
 		document.getElementById("imgInfo").innerHTML=imgInfo;
 		MCUarray=new Array;
 		console.log("["+Mx+"x"+My+"="+Mx*My+" MCU]");
+		infoStr+=Mx+"x"+My+"="+Mx*My+" MCU<br>";
 		Rptr=scanoffset;
 		Rbitcount=0;
 		Rnumbit=0;
@@ -1117,6 +1268,7 @@ function decodeJpeg(){
 		var row=0;
 		var col=0;
 		var addRestart2NextMCU=-1;
+		//Decode stream
 		for(Rbitcount=scanoffset*8;Rbitcount<endoffset*8-4;){	//decode MCU (-2 bytes to end at last MCU)
 			if(iblock==0){
 				//create MCU structure
@@ -1247,7 +1399,9 @@ function decodeJpeg(){
 		}
 		if(ErrCnt>0) console.log("Decode skip: "+ErrCnt);
 		imgInfo+="<br>"+mcucount+" MCU found";
+		infoStr+=mcucount+" MCU found<br>";
 		document.getElementById("imgInfo").innerHTML=imgInfo;
+		infoDiv.innerHTML=infoStr;
 		ctx.canvas.width=Mx*mcuPixX;
 		displayRows=Math.ceil(mcucount/Mx);
 		ctx.canvas.height=displayRows*mcuPixY;	//enough rows for all MCUs
@@ -1260,7 +1414,7 @@ function decodeJpeg(){
 		ctxZoom.canvas.style.width=mcuPixX*10;
 		ctxZoom.canvas.style.height=mcuPixY*10;
 		ctxPicture.imageSmoothingEnabled = false;
-		ctxPicture.canvas.width=document.documentElement.clientWidth-ctxZoom.canvas.width;
+		ctxPicture.canvas.width=document.documentElement.clientWidth-250;//ctxZoom.canvas.width;
 		ctxPicture.canvas.height=ctx.canvas.height/ctx.canvas.width*ctxPicture.canvas.width;
 		if(ctxPicture.canvas.height>document.documentElement.clientHeight-10){	//too high
 			ctxPicture.canvas.height=document.documentElement.clientHeight-10;
@@ -1268,7 +1422,9 @@ function decodeJpeg(){
 		}
 		document.getElementById("rstdiv").style.display=restartInt>-1?'':'none';
 		drawRestart=document.querySelector("#rst").checked;
-		//render(-1,document.getElementById("layer").value);
+		shiftRendering=0;
+		selectedMCU.list=[];	//clear extended selection
+		colorFixList.length=0;	//clear fix list if present
 		updateAllMCU(0);
 	}
 	console.timeEnd("decode");
@@ -1278,7 +1434,8 @@ function decodeJpeg(){
 //block  = MCU index; draw all MCUs if block<0
 //length = number of MCU to draw
 //mode   = RGB,Y,C1,C2
-function render(block=-1,mode="RGB",length=-1){
+//shift  = shift rendering position by a number of MCU (+-)
+function render(block=-1,mode="RGB",length=-1,shift=0){
 	if(MCUarray.length==0) return;
 //	console.time("render");
 	var max;
@@ -1289,8 +1446,8 @@ function render(block=-1,mode="RGB",length=-1){
 		max=MCUarray.length;
 	}
 	else if(block<MCUarray.length){
-		row=Math.floor(block/Mx);
-		col=block-row*Mx;
+		row=Math.floor((block+shift)/Mx);
+		col=(block+shift)-row*Mx;
 		max=length>0?block+length:block+1;
 		if(max>MCUarray.length) max=MCUarray.length;
 	}
@@ -1363,7 +1520,7 @@ function render(block=-1,mode="RGB",length=-1){
 			row++;
 		}
 	}
-	if(renderall){
+	if(renderall){	//fill the rest with white
 		var imgData = ctx.createImageData(mcuPixX,mcuPixY);
 		for(j=0;j<imgData.data.length;j++) imgData.data[j]=255;	
 		for(;col<Mx;col++) ctx.putImageData(imgData,mcuPixX*col,mcuPixY*row);
@@ -1414,6 +1571,13 @@ function renderZoom(block,mode="RGB"){
 	offscreen.getContext("2d").putImageData(imgData, 0, 0);
 	ctxZoom.imageSmoothingEnabled = false;
 	ctxZoom.drawImage(offscreen,0,0,mcuPixX*10,mcuPixY*10);
+}
+
+//reset shifted rendering
+function resetShift(){
+	shiftRendering=0;
+	render(-1,document.getElementById("layer").value);
+	document.getElementById("shiftInfo").innerHTML="";
 }
 
 //convert coefficients in MCUarray[MCU] to pixel data
@@ -1578,14 +1742,17 @@ function fixColorDiff(){
 	if(selectedMCU.i<0||colorFixList.length==0) return;
 	var refMCU=[];	//MCUs to be matched in color
 	var objMCU=[];	//MCUs that change in color
+	var originalMCU=[];
 	for(i=0;i<colorFixList.length;i++){
+		originalMCU.push(structuredClone(MCUarray[colorFixList[i].i]));
 		if(colorFixList[i].y>0){
 			refMCU.push(colorFixList[i].i-Mx);
 			objMCU.push(colorFixList[i].i);
 		}
 	}
-	for(bC=1;bC<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[bC].blockType!="C";bC++);
-	for(bC2=1;bC2<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[bC2].blockType!="C2";bC2++);
+	undoList.push({action: "fixColor", position: colorFixList[0].i, cells: originalMCU});
+	for(bC=1;bC<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[bC].blockType!="C";bC++);	//C1 index
+	for(bC2=1;bC2<MCUarray[selectedMCU.i].blocks.length&&MCUarray[selectedMCU.i].blocks[bC2].blockType!="C2";bC2++); //C2 index
 	var refComp,objComp,deltaComp,deltaCompZ;
 	var xZ,x;
 	for(var m=0;m<refMCU.length;m++){
@@ -1913,6 +2080,14 @@ function backSearchBlock(MCUrec,type,initSrcAddr){
 	//console.log(MCUrec.length);
 }
 
+//simulate random file corruption in the stream area
+function corruptFile(N){
+	m=filebuf.length-scanoffset;
+	for(;N>0;N--){
+		 filebuf[scanoffset+Math.floor(m * Math.random())]^=Math.floor(256 * Math.random());
+	}
+	decodeJpeg();
+}
 
 //read bit from buffer
 //res=0: reset bitcount
@@ -2147,6 +2322,7 @@ const DECODE_PARTIAL_RESTART=4;
 //v=1 out on console
 //type=0 Y
 //type=1 C
+//bs=string to save bitstream (0=none)
 //return value:
 // DECODE_UNKNOWN	-> unknown code
 // DECODE_EOF 		-> end of data
@@ -2393,20 +2569,27 @@ function YCrCb2RGB(Y,C2,C1){
 }
 
 //print matrix in rows of 8
-function printmat(m,n=""){
-	var i,r=0,str=n+"[\n";
+function printmat(m,n="",console=1){
+	var NL=console==1?"\n":"<br>";
+	var i,r=0,str=n+"["+NL;
 	for(i=0;i<m.length;i++){
 		str+=" ";
 		str+=m[i]%1?m[i].toFixed(2):m[i];
 		r++;
 		if(r==8){
 			r=0;
-			console.log(str);
-			str="";
+			if(console==1){ console.log(str); str="";}
+			else str+="<br>";
 		}
 	}
-	if(r>0) console.log(str);
-	console.log("]");
+	if(console==1){
+		if(r>0) console.log(str);
+		console.log("]");
+	}
+	else{
+		str+="]<br>";
+		return str;
+	}
 }
 
 //arrays are equal?
@@ -2488,7 +2671,7 @@ markers=[
 ]; 
 
 // quantization <=> dequantization
-qmatY = [
+qmatYstd=[
 	16,11,10,16,24,40,51,61,
 	12,12,14,19,26,58,60,55,
 	14,13,16,24,40,57,69,56,
@@ -2498,7 +2681,7 @@ qmatY = [
 	49,64,78,87,103,121,120,101,
 	72,92,95,98,112,100,103,99];
 
-qmatC=[
+qmatCstd=[
 	17,18,24,47,99,99,99,99,
 	18,21,26,66,99,99,99,99,
 	24,26,56,99,99,99,99,99,
@@ -2508,10 +2691,9 @@ qmatC=[
 	99,99,99,99,99,99,99,99,
 	99,99,99,99,99,99,99,99];
 
-
 //Huffman tables
 //{prefix length, prefix, code = length of number that follows}
-YDC=[
+YDCstd=[
 [2,0b00,0],
 [3,0b010,1],
 [3,0b011,2],      
@@ -2527,7 +2709,7 @@ YDC=[
 [-1,-1,-1],
 ];
 
-CDC=[
+CDCstd=[
 [2,0b00,0],
 [2,0b01,1],
 [2,0b10,2],
@@ -2545,7 +2727,7 @@ CDC=[
 
 //[prefix length, prefix, code]
 //code: [ZRL][#bit] ZRL=[0..F] #bit=[1..10]
-YAC=[
+YACstd=[
 [2,0b00,0x01],
 [2,0b01,0x02],
 [3,0b100,0x03],
@@ -2722,7 +2904,7 @@ YAC=[
 [-1,-1,-1],
 ];
 
-CAC=[
+CACstd=[
 //Codes of length 02 bits:
 [2,0b00,0x00],			//EOB
 [2,0b01,0x01],
@@ -2975,8 +3157,6 @@ HT4=[
 	0xDA,0xE2,0xE3,0xE4,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xF2,0xF3,0xF4,0xF5,0xF6,0xF7,
 	0xF8,0xF9,0xFA
 ];
-/*
-*/
 
 </script>
 </body>
