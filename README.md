@@ -51,4 +51,4 @@ Equalize colors either manually (DC+/DC- while viewing a single channel) or auto
 
 Finally, save as a new image
 
-For more details see the tutorial on [how to repair a corrupted image](RepairingCorruptedJpeg-JVRT.pdf) 
+For more details see the tutorial on [how to repair a corrupted JPEG image](RepairingCorruptedJpeg-JVRT.pdf) 
