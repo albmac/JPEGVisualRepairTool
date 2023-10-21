@@ -16,20 +16,23 @@ Using it you can:
 
 ## Controls
 
-- **mouse wheel** → zoom image
-- **left click** → select MCU; a black or white rectangle appears on selected MCU
-- **shift+left click** → extend selection
-- **left button drag** → drag image
-- **right click** → select MCU for color fixing; a red rectangle appears on selected MCU
-- **right button drag** → extend selection for color fixing
-- **ctrl-c** → copy selected MCUs
-- **ctrl-v** → paste before selected MCU
-- **ctrl-z** → undo last operation
-- **arrows** → change selected MCU
-- **i** → open MCU info dialog
-- **s** → shift MCU rendering using left/right keys
-- **del** → delete MCU
-- **1-2-3-4** → change view (RGB, Y, Cb, Cr)
+- **mouse wheel** ⇒ zoom image
+- **left click** ⇒ select MCU; a black or white rectangle appears on selected MCU
+- **shift+left click** ⇒ extend selection
+- **left button drag** ⇒ drag image
+- **right click** ⇒ select MCU for color fixing; a red rectangle appears on selected MCU
+- **right button drag** ⇒ extend selection for color fixing
+- **esc** ⇒ unselect MCUs
+- **ctrl-c** ⇒ copy selected MCUs
+- **ctrl-v** ⇒ paste before selected MCU
+- **ctrl-z** ⇒ undo last operation
+- **del** ⇒ delete MCU
+- **arrows** ⇒ change selected MCU
+- **f** ⇒ zoom fit
+- **i** ⇒ open MCU info dialog
+- **s** ⇒ shift MCU rendering using left/right keys
+- **1-2-3-4** ⇒ change view (RGB, Y, Cb, Cr)
+- **] [** ⇒ zoom in/out
 
 A crossed red rectangle appears on MCUs that produced decode errors.
 
