@@ -9,7 +9,7 @@
 <body style="margin:0;">
 <canvas id="pictureCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
 <div id="tools" style="display:inline-block; width:250px; border:1px solid #d3d3d3; vertical-align: top;">
-<b>JPEG visual repair tool v1.2</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
+<b>JPEG visual repair tool v1.3</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
 <input type = "button" value = "Open..." onclick=document.getElementById('imgOpen').click()>
 <input id = "imgOpen" type="file" style='visibility:hidden;width:0%' onchange="readFile(this)" multiple>
 <button onclick=saveFile()>Save...</button>&nbsp;
@@ -28,7 +28,7 @@ View channel
 <button onclick=MCUinfoDialog.showModal()>MCU info</button>
 <button onclick=fixColorDiff()>Fix colors</button><br>
 <button onclick=backSearchDialog.showModal()>MCU back search</button>
-<input type="Checkbox" id="shift">Shift MCU<br>
+<input type="Checkbox" id="shift" onchange=shiftChange()>Shift MCU<br>
 <button onclick=addMCU() style="width:7.5em;">Insert MCU</button> 
 <button onclick=removeMCU() style="width:7.5em;">Remove MCU</button><br>
 <input type="radio" id="dc1" name="delta" value="1"><label for="dc1">1</label>
@@ -82,6 +82,7 @@ View channel
 	</div>
 </dialog>
 <dialog id="imageInfoDialog" style="border-radius:4px; border:1px solid; position: right; max-width: 80%">
+	<b>Image info</b>
 	<div id="imgInfoExt">
 	</div>
 	<button value="ok" onclick=imageInfoDialog.close()>OK</button><br><br>
@@ -89,7 +90,7 @@ View channel
 	<button onclick=corruptFile(imageInfoDialog.querySelector("#corruptPoints").value)>Corrupt image</button>
 </dialog>
 <dialog id="infoDialog" style="border-radius:4px; border:1px solid;">
-<H2 style="display:inline">JPEG visual repair tool v1.2 (Sep '23)</H2> by Alberto Maccioni<br><br>
+<H2 style="display:inline">JPEG visual repair tool v1.3 (Oct '23)</H2> by Alberto Maccioni<br><br>
 This tool can load JPEG images while preserving MCU (Minimum Coded Unit) coding data 
 and allows editing at MCU level.<br>
 The purpose is to correct artifacts resulting from file corruption.<br>
@@ -114,12 +115,15 @@ Controls:<br>
 <b>ctrl-v</b> &rArr; paste before selected MCU<br>
 <b>ctrl-z</b> &rArr; undo last operation<br>
 <b>del</b> &rArr; delete MCU<br>
+<b>arrows</b> &rArr; change selected MCU<br>
+<b>f</b> &rArr; zoom fit<br>
 <b>i</b> &rArr; extra MCU info<br>
 <b>s</b> &rArr; shift MCU rendering using left/right keys<br>
 <b>1</b> &rArr; switch to RGB view<br>
 <b>2</b> &rArr; switch to Y view<br>
 <b>3</b> &rArr; switch to Cb view<br>
 <b>4</b> &rArr; switch to Cr view<br>
+<b>] [</b> &rArr; zoom in/out<br>
 <br>
 
 <button value="ok" onclick=infoDialog.close()>OK</button>
@@ -217,6 +221,10 @@ cPicture.addEventListener("click", function(e) {
 		noClick=false;
 		return;
 	}
+	if(shiftRendering!=0){
+		resetShift();	//reset shift
+		selectedUpdate();
+	}
 	var x = e.pageX - cPicture.offsetLeft;
 	var y = e.pageY - cPicture.offsetTop;
 	var rate=ctx.canvas.width/ctxPicture.canvas.width/zoomFactor;
@@ -302,6 +310,9 @@ cPicture.addEventListener( 'wheel', function(e){
 		if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
 		if(zDy<ctxPicture.canvas.height*(1-zoomFactor)) zDy=ctxPicture.canvas.height*(1-zoomFactor);
 	}
+
+//	zDx=e.pageX*(1-a)+cPicture.offsetLeft*(a-1)+zDx*a;
+
 	ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
 	document.getElementById("zoom").innerHTML="Zoom:"+zoomFactor.toFixed(2);
 });
@@ -674,11 +685,54 @@ document.body.addEventListener("keydown",function(ev){
 			updateAllMCU(item.position);
 		}
 	}
-	if(key==219){	//[
+	if(key==70){	//f		fit
+		zoomFactor=1;
+		zDx=zDy=0;
+		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+		document.getElementById("zoom").innerHTML="Zoom:"+zoomFactor.toFixed(2);
 	}
-	if(key==221){	//]
+	if(key==219){	//[ zoom-out
+		var xorig=(cPicture.offsetWidth/2-zDx)/zoomFactor;	//center in original picture coordinates 
+		var yorig=(cPicture.offsetHeight/2-zDy)/zoomFactor;
+		zoomFactor*=0.8;
+		if(zoomFactor<1){
+			zoomFactor=1;
+			zDx=zDy=0;
+		}
+		else{
+			zDx=(cPicture.offsetWidth/2-cPicture.offsetLeft)-xorig*zoomFactor;	//shift to center
+			zDy=(cPicture.offsetHeight/2-cPicture.offsetTop)-yorig*zoomFactor;
+			if(zDx>0) zDx=0;
+			if(zDy>0) zDy=0;
+			if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
+			if(zDy<ctxPicture.canvas.height*(1-zoomFactor)) zDy=ctxPicture.canvas.height*(1-zoomFactor);
+		}
+		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+		document.getElementById("zoom").innerHTML="Zoom:"+zoomFactor.toFixed(2);
+	}
+	if(key==221){	//]	zoom-in
+		var xorig=(cPicture.offsetWidth/2-zDx)/zoomFactor;	//center in original picture coordinates 
+		var yorig=(cPicture.offsetHeight/2-zDy)/zoomFactor;
+		zoomFactor*=1.25;
+		if(zoomFactor>100) zoomFactor=100;
+		zDx=(cPicture.offsetWidth/2-cPicture.offsetLeft)-xorig*zoomFactor;	//shift to center
+		zDy=(cPicture.offsetHeight/2-cPicture.offsetTop)-yorig*zoomFactor;
+		if(zDx>0) zDx=0;
+		if(zDy>0) zDy=0;
+		if(zDx<ctxPicture.canvas.width*(1-zoomFactor)) zDx=ctxPicture.canvas.width*(1-zoomFactor);
+		if(zDy<ctxPicture.canvas.height*(1-zoomFactor)) zDy=ctxPicture.canvas.height*(1-zoomFactor);
+		ctxPicture.drawImage(pictInt,zDx,zDy,ctxPicture.canvas.width*zoomFactor,ctxPicture.canvas.height*zoomFactor);
+		document.getElementById("zoom").innerHTML="Zoom:"+zoomFactor.toFixed(2);
 	}
 });
+
+function shiftChange(){
+	var sh=document.getElementById("shift");
+	if(sh.checked==false&&shiftRendering!=0){
+		resetShift();	//reset shift
+		selectedUpdate();
+	}
+}
 
 function removeDuplicates(arr){
 	return arr.filter((item,index)=>arr.indexOf(item)===index);
@@ -994,9 +1048,9 @@ function saveFile(){
 	link.id="downloadID";
 	link.href = blobUrl;
 	link.download = filename.replace(/\./,"_corrected.");
-	document.body.appendChild(link); // Or append it whereever you want
+	document.body.appendChild(link); // Or append it wherever you want
 	document.querySelector("#downloadID").click() //can add an id to be specific if multiple anchor tag, and use #id
-	document.body.removeChild(link); // Or append it whereever you want
+	document.body.removeChild(link);
 }
 
 //change layer and redraw selection rectangle
@@ -1041,7 +1095,7 @@ function decodeJpeg(){
 	var X=0,Y=0;
 	var sof0=0,endoffset=0;
 	var drioffset=0;
-	var infoStr="Image info<br>"+filename+"<br>";
+	var infoStr=filename+"<br>";
 	scanoffset=0;
 	dht.length=0;
 	dqt.length=0;
@@ -1263,8 +1317,6 @@ function decodeJpeg(){
 		var decode_result,restartCount=0;
 		var rstErrStat_extra=0,errnum,next_rstnum=0,rst;
 		iblock=0;
-//		rstErrStat=new Array;
-//		for(i=0;i<50;i++) rstErrStat[i]=0;
 		var row=0;
 		var col=0;
 		var addRestart2NextMCU=-1;
@@ -1345,8 +1397,6 @@ function decodeJpeg(){
 							MCUarray[mcucount].blocks[iblock].errors+=
 								" Restart interval error: +"+errnum;
 							console.log("MCU"+mcucount+MCUarray[mcucount].blocks[iblock].errors);
-							//if(errnum<50) rstErrStat[errnum]++;
-							//else rstErrStat_extra=1;
 						}
 						restartCount=0;
 					}
@@ -1414,7 +1464,7 @@ function decodeJpeg(){
 		ctxZoom.canvas.style.width=mcuPixX*10;
 		ctxZoom.canvas.style.height=mcuPixY*10;
 		ctxPicture.imageSmoothingEnabled = false;
-		ctxPicture.canvas.width=document.documentElement.clientWidth-250;//ctxZoom.canvas.width;
+		ctxPicture.canvas.width=document.documentElement.clientWidth-270; //+20
 		ctxPicture.canvas.height=ctx.canvas.height/ctx.canvas.width*ctxPicture.canvas.width;
 		if(ctxPicture.canvas.height>document.documentElement.clientHeight-10){	//too high
 			ctxPicture.canvas.height=document.documentElement.clientHeight-10;
@@ -1502,7 +1552,7 @@ function render(block=-1,mode="RGB",length=-1,shift=0){
 				j=MCUarray[i].blocks.length;
 			}
 		}
-		if(drawRestart&&MCUarray[i].restart>-1){
+		if(drawRestart&&MCUarray[i].restart>-1){	//Restart marker
 			ctx.beginPath();
 			ctx.lineWidth = "1";
 			//ctx.strokeStyle = "green";
@@ -1737,7 +1787,8 @@ function rstSet(){
 }
 
 //Fix color difference between MCU(x,y) and MCU(x,y-1)
-//by changing DC coefficient of the currently selected MCU
+//by changing DC coefficient of MCU(x,y)
+//MCU list in colorFixList
 function fixColorDiff(){
 	if(selectedMCU.i<0||colorFixList.length==0) return;
 	var refMCU=[];	//MCUs to be matched in color
@@ -1783,7 +1834,7 @@ function fixColorDiff(){
 		objComp=getAvgComponents(O,0);  	//average components, upper row
 		deltaComp={Y:objComp.Y-refComp.Y,C1:objComp.C1-refComp.C1,C2:objComp.C2-refComp.C2};
 		//console.log("x=["+x.Y+" "+x.C1+" "+x.C2+"] f(x)=["+deltaComp.Y+" "+deltaComp.C1+" "+deltaComp.C2+"]");
-		for(var j=0;j<10;j++){
+		for(var j=0;j<10;j++){ //at most 10 iterations
 			if(deltaComp.Y!=deltaCompZ.Y) MCUarray[O].blocks[0].coeff[0]=Math.round(x.Y-deltaComp.Y*(x.Y-xZ.Y)/(deltaComp.Y-deltaCompZ.Y));
 			if(deltaComp.C1!=deltaCompZ.C1) MCUarray[O].blocks[bC].coeff[0]=Math.round(x.C1-deltaComp.C1*(x.C1-xZ.C1)/(deltaComp.C1-deltaCompZ.C1));
 			if(deltaComp.C2!=deltaCompZ.C2) MCUarray[O].blocks[bC2].coeff[0]=Math.round(x.C2-deltaComp.C2*(x.C2-xZ.C2)/(deltaComp.C2-deltaCompZ.C2));
@@ -2191,6 +2242,7 @@ const EOI_MARKER=-2000000;
 const HTAB_ERR=-3000000;
 const RESTART_MARKER=-4000000;
 //decode DC value from buffer f using Huffman table Htable
+//if present, fill bs structure with bitstream
 //return value:
 //EOF_ERR 			-> end of file
 //EOI_MARKER 		-> EOI marker
@@ -2245,6 +2297,7 @@ function decodeHvalDC(Htable,bs=0){
 const EOB=0x1000000;
 const ZRL=0x2000000;
 //decode AC value from buffer f using Huffman table Htable
+//if present, fill bs structure with bitstream
 //return value:
 //EOF_ERR 			-> end of file
 //EOI_MARKER 		-> EOI marker
@@ -2322,7 +2375,7 @@ const DECODE_PARTIAL_RESTART=4;
 //v=1 out on console
 //type=0 Y
 //type=1 C
-//bs=string to save bitstream (0=none)
+//bs=structure with string used to save bitstream (0=none)
 //return value:
 // DECODE_UNKNOWN	-> unknown code
 // DECODE_EOF 		-> end of data
@@ -2435,10 +2488,9 @@ function decodeBlock(type,v=0,bs=0){
 }
 
 const ENC_ERR=-1;
-//encode DC value using Huffman table Htable
-//return value:
 //encode x (DC value, max 11 bit) using Huffman table Htable
-//result: {code: coded value, n: total number of bits}
+//return value: 
+//{code: coded value, n: total number of bits}
 //ENC_ERR if x requires more than 11 bits or code not found in table
 function encodeHvalDC(Htable,x){
 	var val=x>0?x:-x;
@@ -2455,7 +2507,8 @@ function encodeHvalDC(Htable,x){
 //encode AC value using Huffman table Htable
 //R=zero run length
 //x=coefficient
-//result: {code: coded value, n: total number of bits}
+//return value: 
+//{code: coded value, n: total number of bits}
 //ENC_ERR if x requires more than 10 bits or code not found in table
 function encodeHvalAC(Htable,R,x){
 	var val=x>0?x:-x;
@@ -2471,7 +2524,7 @@ function encodeHvalAC(Htable,R,x){
 }
 
 
-//Standard IDCT
+//Standard IDCT according to definition
 function idct2dB(mat){
 	const cos = Math.cos, PI = Math.PI, isqrt2 = 1 / Math.sqrt(2);
 	mat2=new Array();
@@ -2569,6 +2622,7 @@ function YCrCb2RGB(Y,C2,C1){
 }
 
 //print matrix in rows of 8
+//to console or string
 function printmat(m,n="",console=1){
 	var NL=console==1?"\n":"<br>";
 	var i,r=0,str=n+"["+NL;
