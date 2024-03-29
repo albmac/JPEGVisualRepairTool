@@ -1,5 +1,5 @@
 # JPEG Visual Repair Tool
-<img src="JVRTmain.jpg" width="500"></img>
+<img src="JVRTmain.jpg" width="500" />
 
 JPEG Visual Repair Tool can load JPEG images while preserving MCU (Minimum Coded Unit) coding data and allows editing at MCU level; the main purpose is to repair corrupted images.
 It is written in JavaScript and resides in a single [html document](JPEGVisualRepairTool.html); it can be simply saved for offline use, there are no library dependencies. 
@@ -42,15 +42,15 @@ A crossed red rectangle appears on MCUs that produced decode errors.
 
 Corrupted images can be edited block by block (MCU) without losing information; even bright or dark areas still contain the original details. The problem often lies in the DC levels of specific MCUs.
 
-<img src="s1.jpg" width="400"></img>
+<img src="s1.jpg" width="400" />
 
 First align image features by deleting spurious MCUs (effect of corruption); the shift feature (s+arrows) comes handy in determining how many blocks to delete.
 
-<img src="s2.jpg" width="400"></img>
+<img src="s2.jpg" width="400" />
 
 Equalize colors either manually (DC+/DC- while viewing a single channel) or automatically (using __Fix colors__ on right-selected MCUs)
 
-<img src="s3.jpg" width="400"></img>
+<img src="s3.jpg" width="400" />
 
 Finally, save as a new image
 
@@ -58,4 +58,4 @@ For more details see the tutorial on [how to repair a corrupted JPEG image](Repa
 
 Or this video tutorial:
 
-[<img src="video1.jpg" width="500"></img>](https://www.youtube.com/watch?v=REYcgWHb33M&t=194s)
+[<img src="video1.jpg" width="500" />](https://www.youtube.com/watch?v=REYcgWHb33M&t=194s)
