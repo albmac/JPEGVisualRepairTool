@@ -1,9 +1,8 @@
 # JPEG Visual Repair Tool
 <img src="JVRTmain.jpg" width="500" />
 
-JPEG Visual Repair Tool can load JPEG images while preserving MCU (Minimum Coded Unit) coding data and allows editing at MCU level; the main purpose is to repair corrupted images.
-It is written in JavaScript and resides in a single [html document](JPEGVisualRepairTool.html); it can be simply saved for offline use, there are no library dependencies. 
-It is based on [jpeg-decomp](https://github.com/albmac/jpeg-decomp).
+JPEG Visual Repair Tool, based on [jpeg-decomp](https://github.com/albmac/jpeg-decomp), can load JPEG images while preserving MCU (Minimum Coded Unit) coding data and allows editing at MCU level; the main purpose is to repair corrupted images.
+It is written in JavaScript and resides in a single [html document](JPEGVisualRepairTool.html); it can be simply saved for offline use, there are no library dependencies.
 
 Using it you can:
 
