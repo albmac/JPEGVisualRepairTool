@@ -891,7 +891,10 @@ function DCmodMCU(value=1){
 		undoList.push({action: "DC", position: selectedMCU.i, cell: structuredClone(MCUarray[selectedMCU.i])});
 		if(value==0){
 			var newDC=parseInt(document.getElementById("dcVal").value);
-			if(document.getElementById("layer").value=="Y"){
+			if (Number.isNaN(parseInt(newDC))) {
+				; // no value or invalid value
+			}
+			else if(document.getElementById("layer").value=="Y"){
 				MCUarray[selectedMCU.i].blocks[0].coeff[0]=newDC;
 			}
 			else if(document.getElementById("layer").value=="C1"){
