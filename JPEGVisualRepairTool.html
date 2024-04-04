@@ -124,6 +124,7 @@ Controls:<br>
 <b>3</b> &rArr; switch to Cb view<br>
 <b>4</b> &rArr; switch to Cr view<br>
 <b>] [</b> &rArr; zoom in/out<br>
+<b>h</b> &rArr; show this help dialog<br>
 <br>
 
 <button value="ok" onclick=infoDialog.close()>OK</button>
@@ -453,6 +454,7 @@ document.body.addEventListener("copy",function(ev){
 document.body.addEventListener("keydown",function(ev){
 	ev=ev||window.event;
 	var key=ev.which||ev.keycode;
+	if(key==72) infoDialog.showModal();	//h
 	if(key==73) MCUinfoDialog.showModal();	//i
 	if(key==49){	//1
 		document.getElementById("layer").value="RGB";
