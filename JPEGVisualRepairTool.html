@@ -4,12 +4,24 @@
 <style>
 	table {border-collapse:collapse; border:1px solid; width:100%; table-layout:fixed}
 	th,td {padding:5px; border:1px solid;overflow-wrap: break-word;}
+	.loader {
+	  border: 6px solid #f3f3f3; /* Light grey */
+	  border-top: 6px solid #3498db; /* Blue */
+	  border-radius: 50%;
+	  width: 30px;
+	  height: 30px;
+	  animation: spin 1s linear infinite;
+	}
+	@keyframes spin {
+	  0% { transform: rotate(0deg); }
+	  100% { transform: rotate(360deg); }
+	}
 </style>
 </head>
 <body style="margin:0;">
 <canvas id="pictureCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
 <div id="tools" style="display:inline-block; width:250px; border:1px solid #d3d3d3; vertical-align: top;">
-<b>JPEG visual repair tool v1.3</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
+<b>JPEG visual repair tool v1.3a</b> <a href="#" onclick=infoDialog.showModal()>info</a><br>
 <input type = "button" value = "Open..." onclick=document.getElementById('imgOpen').click()>
 <input id = "imgOpen" type="file" style='visibility:hidden;width:0%' onchange="readFile(this)" multiple>
 <button onclick=saveFile()>Save...</button>&nbsp;
@@ -42,7 +54,7 @@ View channel
 <button onclick=DCmodMCU(1) id="dc+" style="width:4em;" disabled>DC+</button> 
 <button onclick=DCmodMCU(-1) id="dc-" style="width:4em;" disabled>DC-</button>
 <button onclick=DCmodMCU(0) id="dcset" style="width:4.5em;" disabled>set DC</button><br>
-<canvas id="zoomCanvas" width="1" height="1" style="border:1px solid #d3d3d3;"></canvas>
+<canvas id="zoomCanvas" width="1" height="1" style="border:1px solid #d3d3d3;display:none"></canvas>
 <div id="rstdiv" style="display:none">show RST <input type="Checkbox" id="rst" onchange=rstEnable()>
 <select id="rstNum" name="rstNum">
 <option value=-1>No RST</option>
@@ -60,8 +72,7 @@ View channel
 <div id="shiftInfo"></div>
 <div id="coord"></div>
 <div id="zoom"></div>
-</div><br>
-<div id="selectedBlock" style="width: 100%;overflow-wrap: break-word;"></div>
+<div id="busy" class="loader" style="display:none"></div></div>
 <dialog id="backSearchDialog" style="border-radius:4px; border:1px solid; position: right; max-height: 60%; width: 300px">
 	MCU <input type="number" id="mcu" maxlength="3" size="3" value=10> 
 	Variants <input type="number" id="variants" maxlength="3" size="4" value="100"><br>
@@ -941,6 +952,7 @@ function readFile(input) {
 	ctxPicture.fillText("Loading "+filename+"...",10,100); 
 	let reader = new FileReader();
 	reader.readAsArrayBuffer(file);
+	document.getElementById("busy").style.display='';
 	reader.onload = function() {
 		filebuf = new Uint8Array(reader.result);
 		decodeJpeg();
@@ -1149,8 +1161,8 @@ function decodeJpeg(){
 						else if(markers[j][0]==0xD9){
 							if(scanoffset!=0) endoffset=i;		//EOI -> end of image
 							if(i<filebuf.length-100){
-								console.log("Early EOF @0x"+i.toString(16));
-								infoStr+="<tr><td>0x"+i.toString(16).toUpperCase()+"</td><td>0xFFD9</td><td>Early EOF</td></tr>";
+								console.log("Early EOI @0x"+i.toString(16));
+								infoStr+="<tr><td>0x"+i.toString(16).toUpperCase()+"</td><td>0xFFD9</td><td><font color='red'>Early EOI</font></td></tr>";
 							}
 						}
 						else if(markers[j][0]==0xDD){
@@ -1182,6 +1194,7 @@ function decodeJpeg(){
 		i++;
 	}
 	infoStr+="</table>";
+	infoStr+="Using frame starting @0x"+sof0.toString(16).toUpperCase()+"<br>";
 	if(endoffset==0) endoffset=filebuf.length;
 	for(i=0;i<dqt.length;i++){	//DQT
 		f=dqt[i];
@@ -1587,6 +1600,7 @@ function render(block=-1,mode="RGB",length=-1,shift=0){
 //draw MCU on zoom canvas
 function renderZoom(block,mode="RGB"){
 	max=MCUarray.length;
+	document.getElementById("zoomCanvas").style.display='';
 	var imgData = ctxZoom.createImageData(mcuPixX,mcuPixY);	//****
 	var i=block;
 	if(mode=="RGB"){
@@ -1765,6 +1779,8 @@ function extractPixel(MCU){
 //works in chunks of 3000 MCU to avoid complete lockup
 function updateAllMCU(i){
 	busy=true;
+//	document.getElementById("busy").innerHTML="working...";
+	document.getElementById("busy").style.display='';
 	if(i<0) i=0;
 	var n=i;
 	for(var j=0;j<3000&&i<MCUarray.length;j++){
@@ -1775,6 +1791,8 @@ function updateAllMCU(i){
 	else{ 
 		selectedUpdate();
 		busy=false;
+		//document.getElementById("busy").innerHTML="";
+		document.getElementById("busy").style.display='none';
 	}
 }
 
@@ -1796,6 +1814,8 @@ function rstSet(){
 //MCU list in colorFixList
 function fixColorDiff(){
 	if(selectedMCU.i<0||colorFixList.length==0) return;
+//	busy=true;
+//	document.getElementById("busy").innerHTML="working...";
 	var refMCU=[];	//MCUs to be matched in color
 	var objMCU=[];	//MCUs that change in color
 	var originalMCU=[];
@@ -1857,8 +1877,9 @@ function fixColorDiff(){
 		console.log("final delta:["+deltaComp.Y+" "+deltaComp.C1+" "+deltaComp.C2+"]");
 		for(var i=O;m+1<objMCU.length&&i<=objMCU[m+1];i++) extractPixel(i);	//update DC values and pixel data
 	}
-	for(var i=O;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
-	render(-1,document.getElementById("layer").value);
+	updateAllMCU(O);	//progressive update
+//	for(var i=O;i<MCUarray.length;i++) extractPixel(i);	//update DC values and pixel data
+//	render(-1,document.getElementById("layer").value);
 	selectedUpdate();
 	colorFixList.length=0;
 }
